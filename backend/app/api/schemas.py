@@ -106,6 +106,10 @@ class ToolCallRequest(StrictModel):
     idempotency_key: str = Field(min_length=8, max_length=160)
 
 
+class ChatRequest(StrictModel):
+    message: str = Field(min_length=1, max_length=8000)
+
+
 class DraftApprovalRequest(StrictModel):
     decision: Literal["APPROVE", "REJECT"]
     edited_text: str | None = Field(default=None, max_length=5000)

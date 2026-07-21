@@ -8,7 +8,8 @@ from ..database import get_db
 from ..db_models import ClientQuestionDraft, DocumentRequestDraft
 from ..security import Actor, assert_case_access, get_actor, require_permission
 from ..services.assistant_service import gateway
-from .schemas import DraftApprovalRequest, ToolCallRequest
+from ..services import chat_service
+from .schemas import ChatRequest, DraftApprovalRequest, ToolCallRequest
 
 router = APIRouter(tags=["assistant"])
 
@@ -18,6 +19,16 @@ def execute_tool(case_id: str, payload: ToolCallRequest, actor: Actor = Depends(
     result = gateway.execute(db, actor=actor, case_id=case_id, name=payload.name, arguments=payload.arguments, idempotency_key=payload.idempotency_key)
     db.commit()
     return result
+
+
+@router.get("/cases/{case_id}/assistant/messages")
+def list_chat_messages(case_id: str, actor: Actor = Depends(require_permission("assistant:*")), db: Session = Depends(get_db)):
+    return chat_service.list_messages(db, actor, case_id)
+
+
+@router.post("/cases/{case_id}/assistant/chat")
+def chat(case_id: str, payload: ChatRequest, actor: Actor = Depends(require_permission("assistant:*")), db: Session = Depends(get_db)):
+    return chat_service.run_chat(db, actor, case_id, payload.message)
 
 
 @router.get("/cases/{case_id}/assistant/drafts")

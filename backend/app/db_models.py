@@ -535,3 +535,22 @@ class ModelEvaluationRun(Base, TimestampMixin):
     approved_for_production: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     approved_by: Mapped[str | None] = mapped_column(String(36))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ChatMessage(Base, TimestampMixin):
+    """Persisted per-case conversation between the CA and the tax assistant.
+
+    Each row is one turn. `tool_trace` records any server-controlled tool calls the
+    model made on that turn (name + result type only) so the workspace can show what
+    the assistant did without trusting free-text claims.
+    """
+
+    __tablename__ = "chat_messages"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=False)
+    case_id: Mapped[str] = mapped_column(ForeignKey("tax_cases.id", ondelete="CASCADE"), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    tool_trace: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(36))
+    __table_args__ = (Index("ix_chat_messages_case_created", "case_id", "created_at"),)
