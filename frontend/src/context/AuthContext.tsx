@@ -15,54 +15,37 @@ const AuthContext = createContext<AuthValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
 
   const checkAuth = useCallback(async () => {
-    // Prevent multiple simultaneous checks
-    if (!loading && initialized && user) return;
+    // Skip if already determined we're logged in
+    if (user) return;
 
+    setLoading(true);
     try {
       console.log("[Auth] Checking auth status...");
-      const response = await api.get<SessionUser>("/auth/me", {
-        timeout: 15000,
-        headers: { 'X-Request-ID': `auth-check-${Date.now()}` }
-      });
+      const response = await api.get<SessionUser>("/auth/me", { timeout: 10000 });
       console.log("[Auth] Auth check success:", response.data);
       setUser(response.data);
-      setLoading(false);
-      setInitialized(true);
     } catch (error: unknown) {
       console.log("[Auth] Auth check failed:", error);
-      // 401 = not logged in (OK)
-      // Network error = might be temporary
-      if (error && typeof error === 'object') {
-        const axiosError = error as { response?: { status?: number }; message?: string };
-        if (axiosError.response?.status === 401) {
-          console.log("[Auth] Not authenticated (401)");
-          setUser(null);
-        } else if (axiosError.message === "Network Error") {
-          console.log("[Auth] Network error - keeping current state");
-          // Don't change user state on network error
-          // This prevents the logout loop
-        }
-      }
+      // Clear user on any auth failure
+      setUser(null);
+    } finally {
       setLoading(false);
-      setInitialized(true);
     }
-  }, [loading, initialized, user]);
+  }, [user]);
 
-  // Check auth once on mount
+  // Check auth on mount only
   useEffect(() => {
-    console.log("[Auth] AuthProvider mounted");
     void checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const establishSession = useCallback((data: SessionResponse) => {
-    console.log("[Auth] Establishing session:", data.user);
+    console.log("[Auth] Establishing session:", data);
     if (data.user) {
       setUser(data.user);
       setLoading(false);
-      setInitialized(true);
     }
   }, []);
 
@@ -74,15 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log("[Auth] Logout API failed (ignoring):", e);
     }
     setUser(null);
-    setLoading(false);
   }, []);
 
   const value = useMemo(
     () => ({ user, loading, checkAuth, establishSession, logout }),
     [user, loading, checkAuth, establishSession, logout]
   );
-
-  console.log("[Auth] Provider render - loading:", loading, "user:", !!user);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
