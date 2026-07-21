@@ -37,8 +37,8 @@ def _token_response(db: Session, user: User, membership: Membership, request: Re
     settings = get_settings()
     cookie_options = {
         "httponly": True,
-        "secure": settings.is_production,
-        "samesite": "lax",
+        "secure": settings.cookie_secure,
+        "samesite": settings.cookie_samesite,
     }
     response.set_cookie("gp_access", access, max_age=settings.access_token_minutes * 60, path="/", **cookie_options)
     response.set_cookie("gp_refresh", refresh, max_age=settings.refresh_token_days * 86400, path="/api/auth", **cookie_options)

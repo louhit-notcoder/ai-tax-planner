@@ -31,6 +31,12 @@ services:
         sync: false
       - key: CORS_ALLOWED_ORIGINS
         sync: false
+      # Frontend (Vercel) and API (Render) are different sites, so auth cookies
+      # must be SameSite=None; Secure or the browser drops them on cross-site XHR.
+      - key: COOKIE_SAMESITE
+        value: none
+      - key: COOKIE_SECURE
+        value: "true"
       - key: ENCRYPTION_KEY_HEX
         sync: false
       - key: BLIND_INDEX_SECRET

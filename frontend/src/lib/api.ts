@@ -38,15 +38,29 @@ async function refreshSession(): Promise<void> {
 
 api.interceptors.response.use(undefined, async (error: AxiosError) => {
   const config = error.config as (InternalAxiosRequestConfig & {_retried?: boolean}) | undefined;
-  const isRefreshOrLogin = Boolean(config?.url?.includes("/auth/refresh") || config?.url?.includes("/auth/login") || config?.url?.includes("/auth/bootstrap"));
-  if (error.response?.status === 401 && config && !config._retried && !isRefreshOrLogin) {
+  // Endpoints where a 401 is an expected/terminal answer and must NOT trigger a
+  // refresh+redirect. `/auth/me` is the initial "am I logged in?" probe — a 401
+  // there simply means "not logged in", handled by AuthContext.
+  const url = config?.url ?? "";
+  const isAuthProbeOrEntry = Boolean(
+    url.includes("/auth/refresh") ||
+    url.includes("/auth/login") ||
+    url.includes("/auth/bootstrap") ||
+    url.includes("/auth/me")
+  );
+  if (error.response?.status === 401 && config && !config._retried && !isAuthProbeOrEntry) {
     config._retried = true;
     try {
       refreshPromise ||= refreshSession().finally(() => { refreshPromise = null; });
       await refreshPromise;
       return api(config);
     } catch {
-      window.location.assign("/");
+      // Session truly expired mid-use. Send the user back to login, but never
+      // reload if we are already on the login page — that is what caused the
+      // infinite reload loop.
+      if (window.location.pathname !== "/") {
+        window.location.assign("/");
+      }
     }
   }
   return Promise.reject(error);

@@ -17,6 +17,8 @@ class Settings:
     expose_auth_tokens_in_response: bool
     app_base_url: str
     cors_origins: tuple[str, ...]
+    cookie_samesite: str
+    cookie_secure: bool
     encryption_key_hex: str
     blind_index_secret: str
     storage_backend: str
@@ -105,6 +107,23 @@ def get_settings() -> Settings:
     root = Path(__file__).resolve().parents[2]
     environment = os.getenv("GREEN_PAPAYA_ENV", "development").strip().lower()
     default_db = "sqlite:///./green_papaya_v3.db" if environment != "production" else ""
+
+    # Cookie policy. For a cross-site deployment (e.g. frontend on Vercel, API on
+    # Render/other domain) browsers require SameSite=None AND Secure=True, otherwise
+    # the auth cookie is dropped on cross-origin XHR and the user can never stay
+    # logged in. Set COOKIE_SAMESITE=none for such deployments.
+    cookie_samesite = os.getenv("COOKIE_SAMESITE", "lax").strip().lower()
+    if cookie_samesite not in {"lax", "strict", "none"}:
+        cookie_samesite = "lax"
+    _cookie_secure_env = os.getenv("COOKIE_SECURE", "").strip().lower()
+    if _cookie_secure_env in {"true", "1", "yes"}:
+        cookie_secure = True
+    elif _cookie_secure_env in {"false", "0", "no"}:
+        cookie_secure = False
+    else:
+        # SameSite=None is invalid without Secure, so force Secure when None is used.
+        cookie_secure = (environment == "production") or (cookie_samesite == "none")
+
     settings = Settings(
         environment=environment,
         database_url=os.getenv("DATABASE_URL", default_db),
@@ -115,6 +134,8 @@ def get_settings() -> Settings:
         expose_auth_tokens_in_response=os.getenv("EXPOSE_AUTH_TOKENS_IN_RESPONSE", "true" if environment != "production" else "false").lower() == "true",
         app_base_url=os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/"),
         cors_origins=_csv(os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+        cookie_samesite=cookie_samesite,
+        cookie_secure=cookie_secure,
         encryption_key_hex=os.getenv("ENCRYPTION_KEY_HEX", "00" * 32),
         blind_index_secret=os.getenv("BLIND_INDEX_SECRET", "development-blind-index-secret-change-me"),
         storage_backend=os.getenv("STORAGE_BACKEND", "local").lower(),
