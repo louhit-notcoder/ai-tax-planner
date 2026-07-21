@@ -72,7 +72,7 @@ def bootstrap(payload: BootstrapRequest, request: Request, response: Response, d
     db.add(membership); db.flush()
     actor = Actor(user.id, tenant.id, "firm_owner", False, frozenset({"*"}))
     append_audit(db, actor=actor, action="tenant.bootstrapped", entity_type="tenant", entity_id=tenant.id, after={"name": tenant.name, "slug": tenant.slug})
-    result = _token_response(db, user, membership, request, response, mfa=False)
+    result = _token_response(db, user, membership, request, response, mfa=True)
     db.commit()
     return result
 
