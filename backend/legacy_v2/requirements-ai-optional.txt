@@ -1,0 +1,4 @@
+# Optional provider-specific extraction dependencies.
+# The application runs without these and falls back to deterministic local parsing.
+google-generativeai==0.8.6
+openai==1.99.9

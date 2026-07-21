@@ -1,0 +1,112 @@
+{
+  "release_id": "AY2026_27_V3.0.0",
+  "assessment_year": "AY 2026-27",
+  "financial_year": "FY 2025-26",
+  "act_namespace": "ITA_1961",
+  "status": "CODE_COMPLETE_PENDING_CA_CERTIFICATION",
+  "currency": "INR",
+  "new_regime": {
+    "slabs": [["400000", "0"], ["400000", "0.05"], ["400000", "0.10"], ["400000", "0.15"], ["400000", "0.20"], ["400000", "0.25"], ["Infinity", "0.30"]],
+    "standard_deduction_salary": "75000",
+    "standard_deduction_family_pension": "25000",
+    "rebate_threshold": "1200000",
+    "rebate_max": "60000",
+    "surcharge_cap": "0.25"
+  },
+  "old_regime": {
+    "slabs_below_60": [["250000", "0"], ["250000", "0.05"], ["500000", "0.20"], ["Infinity", "0.30"]],
+    "slabs_senior": [["300000", "0"], ["200000", "0.05"], ["500000", "0.20"], ["Infinity", "0.30"]],
+    "slabs_super_senior": [["500000", "0"], ["500000", "0.20"], ["Infinity", "0.30"]],
+    "standard_deduction_salary": "50000",
+    "standard_deduction_family_pension": "15000",
+    "rebate_threshold": "500000",
+    "rebate_max": "12500",
+    "surcharge_cap": "0.37"
+  },
+  "surcharge": [
+    {"threshold": "5000000", "rate": "0.10"},
+    {"threshold": "10000000", "rate": "0.15"},
+    {"threshold": "20000000", "rate": "0.25"},
+    {"threshold": "50000000", "rate": "0.37"}
+  ],
+  "special_surcharge_cap": "0.15",
+  "cess_rate": "0.04",
+  "capital_gains": {
+    "section_111a_rate": "0.20",
+    "section_112a_rate": "0.125",
+    "section_112a_exemption": "125000",
+    "other_ltcg_rate": "0.125",
+    "legacy_property_indexed_rate": "0.20",
+    "vda_rate": "0.30",
+    "listed_holding_months": 12,
+    "other_holding_months": 24,
+    "section_50aa_start_date": "2023-04-01"
+  },
+  "house_property": {
+    "standard_deduction_rate": "0.30",
+    "self_occupied_interest_cap_old": "200000",
+    "inter_head_loss_setoff_cap_old": "200000",
+    "max_self_occupied_properties": 2
+  },
+  "deductions": {
+    "80c_group_cap": "150000",
+    "80ccd1b_cap": "50000",
+    "80tta_cap": "10000",
+    "80ttb_cap": "50000",
+    "80d_self_family_cap": "25000",
+    "80d_self_family_senior_cap": "50000",
+    "80d_parents_cap": "25000",
+    "80d_parents_senior_cap": "50000",
+    "80d_preventive_cap": "5000",
+    "80ddb_regular_cap": "40000",
+    "80ddb_senior_cap": "100000",
+    "80u_normal": "75000",
+    "80u_severe": "125000",
+    "80dd_normal": "75000",
+    "80dd_severe": "125000"
+  },
+  "presumptive": {
+    "44ad_standard_limit": "20000000",
+    "44ad_enhanced_limit": "30000000",
+    "44ad_cash_receipt_ratio_limit": "0.05",
+    "44ad_digital_rate": "0.06",
+    "44ad_cash_rate": "0.08",
+    "44ada_standard_limit": "5000000",
+    "44ada_enhanced_limit": "7500000",
+    "44ada_cash_receipt_ratio_limit": "0.05",
+    "44ada_rate": "0.50"
+  },
+  "fees": {
+    "234f_income_threshold": "500000",
+    "234f_low": "1000",
+    "234f_high": "5000"
+  },
+  "interest": {
+    "monthly_rate": "0.01",
+    "advance_tax_threshold": "10000",
+    "advance_tax_instalments": [
+      {"date": "2025-06-15", "cumulative_ratio": "0.15"},
+      {"date": "2025-09-15", "cumulative_ratio": "0.45"},
+      {"date": "2025-12-15", "cumulative_ratio": "0.75"},
+      {"date": "2026-03-15", "cumulative_ratio": "1.00"}
+    ]
+  },
+  "rounding": {"total_income_multiple": "10", "tax_multiple": "10"},
+  "sources": [
+    {
+      "title": "Income Tax Department ITR-2 FAQs AY 2026-27",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/all-topics/e-filing-services/itr-2/itr-2-faqs",
+      "topics": ["new_regime_slabs", "rebate_87a"]
+    },
+    {
+      "title": "ITR-1 Validation Rules AY 2026-27",
+      "url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-05/CBDT_e-Filing_ITR%201_Validation%20Rules_AY%202026-27.pdf",
+      "topics": ["itr1_validation"]
+    },
+    {
+      "title": "ITR-2 Validation Rules AY 2026-27",
+      "url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-05/CBDT__e-Filing_ITR%202_Validation%20Rules_AY%202026-27_V1.0.pdf",
+      "topics": ["itr2_validation"]
+    }
+  ]
+}

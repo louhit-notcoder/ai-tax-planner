@@ -1,0 +1,6 @@
+project = "green-papaya"
+environment = "production"
+aws_region = "ap-south-1"
+domain_name = "tax.example.com"
+db_username = "green_papaya"
+db_password = "REPLACE_THROUGH_A_SECURE_TFVARS_OR_CI_SECRET"

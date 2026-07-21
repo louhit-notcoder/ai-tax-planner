@@ -1,0 +1,16 @@
+{
+  "artifacts": {
+    "ITR_1": {
+      "filename": "ITR_1_official_schema.json",
+      "version": "AY2026_27_V1.1",
+      "sha256": "GENERATED_BY_SYNC_SCRIPT",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-06/ITR-1_2026_Main_V1.1.json"
+    },
+    "ITR_2": {
+      "filename": "ITR_2_official_schema.json",
+      "version": "AY2026_27_V1.1",
+      "sha256": "GENERATED_BY_SYNC_SCRIPT",
+      "source_url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-06/ITR-2_2026_Main_V1.1.json"
+    }
+  }
+}

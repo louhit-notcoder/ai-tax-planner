@@ -1,0 +1,64 @@
+{
+  "release_id": "AY2026_27_v1.0.0",
+  "assessment_year": "AY 2026-27",
+  "financial_year": "FY 2025-26",
+  "act_namespace": "ITA_1961",
+  "status": "APPROVED_FOR_LIMITED_SCOPE",
+  "scope": {
+    "taxpayer_type": "INDIVIDUAL",
+    "residential_status": ["RESIDENT_ORDINARILY_RESIDENT"],
+    "max_total_income": "5000000",
+    "supported_income": ["SALARY", "HOUSE_PROPERTY_NET", "OTHER_SOURCES", "SECTION_111A", "SECTION_112A"],
+    "unsupported_income": ["BUSINESS", "VDA", "FOREIGN_ASSET", "FOREIGN_INCOME", "PROPERTY_CAPITAL_GAIN", "UNLISTED_SECURITIES"]
+  },
+  "standard_deduction": {"OLD": "50000", "NEW": "75000"},
+  "cess_rate": "0.04",
+  "old_regime": {
+    "slabs": [
+      ["250000", "0"],
+      ["250000", "0.05"],
+      ["500000", "0.20"],
+      ["INF", "0.30"]
+    ],
+    "rebate_threshold": "500000",
+    "rebate_max": "12500"
+  },
+  "new_regime": {
+    "slabs": [
+      ["400000", "0"],
+      ["400000", "0.05"],
+      ["400000", "0.10"],
+      ["400000", "0.15"],
+      ["400000", "0.20"],
+      ["400000", "0.25"],
+      ["INF", "0.30"]
+    ],
+    "rebate_threshold": "1200000",
+    "rebate_max": "60000",
+    "marginal_relief_enabled": true,
+    "rebate_excludes_special_rate_tax": true
+  },
+  "deduction_caps": {
+    "80C": "150000",
+    "80D_LIMITED_SCOPE": "100000"
+  },
+  "special_rates": {
+    "111A": "0.20",
+    "112A": "0.125",
+    "112A_EXEMPTION": "125000"
+  },
+  "sources": [
+    {
+      "title": "Income Tax Department - AY 2026-27 slabs and return guidance",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1"
+    },
+    {
+      "title": "ITR-1 Validation Rules AY 2026-27 v1.0",
+      "url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-05/CBDT_e-Filing_ITR%201_Validation%20Rules_AY%202026-27.pdf"
+    },
+    {
+      "title": "ITR-2 Validation Rules AY 2026-27 v1.0",
+      "url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-05/CBDT__e-Filing_ITR%202_Validation%20Rules_AY%202026-27_V1.0.pdf"
+    }
+  ]
+}

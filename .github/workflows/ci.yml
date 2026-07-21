@@ -1,0 +1,81 @@
+name: Green Papaya V3 CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: green_papaya_ci
+          POSTGRES_USER: green_papaya
+          POSTGRES_PASSWORD: green_papaya_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U green_papaya -d green_papaya_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      GREEN_PAPAYA_ENV: development
+      DATABASE_URL: postgresql+psycopg://green_papaya:green_papaya_ci@localhost:5432/green_papaya_ci
+      JWT_SECRET: ci-only-jwt-secret-ci-only-jwt-secret-ci-only-00000000
+      ENCRYPTION_KEY_HEX: 0000000000000000000000000000000000000000000000000000000000000000
+      BLIND_INDEX_SECRET: ci-only-blind-index-secret-change-not-production
+      REQUIRE_MFA_FOR_PRIVILEGED_ROLES: "false"
+      ALLOW_DEV_BOOTSTRAP: "true"
+      RATE_LIMIT_BACKEND: memory
+      MALWARE_SCAN_REQUIRED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r backend/requirements-production.txt
+      - run: cd backend && alembic upgrade head
+      - run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=backend pytest -q backend/tests_v3
+      - run: python -m compileall -q backend/app backend/main.py
+      - run: pip install pip-audit bandit
+      - run: pip-audit -r backend/requirements-production.txt
+      - run: bandit -q -r backend/app -x backend/tests_v3
+      - run: python scripts/verify_no_embedded_secrets.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: node scripts/check_frontend_syntax.js
+      - run: cd frontend && npm ci --legacy-peer-deps
+      - run: cd frontend && npm run build
+      - run: cd frontend && npm audit --omit=dev --audit-level=high
+
+  container-security:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t green-papaya-backend:ci ./backend
+      - uses: anchore/sbom-action@v0
+        with:
+          image: green-papaya-backend:ci
+          format: cyclonedx-json
+          output-file: backend-sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-sbom
+          path: backend-sbom.cdx.json
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: green-papaya-backend:ci
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true

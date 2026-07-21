@@ -1,0 +1,48 @@
+{
+  "registry_version": "2026-07-21",
+  "default_review_status": "PENDING",
+  "sources": [
+    {
+      "source_type": "ITR_SCHEMA",
+      "title": "ITR-1 JSON Schema AY 2026-27 V1.1",
+      "act_namespace": "ITA_1961",
+      "applicable_periods": ["AY 2026-27"],
+      "official_url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-06/ITR-1_2026_Main_V1.1.json"
+    },
+    {
+      "source_type": "ITR_SCHEMA",
+      "title": "ITR-2 JSON Schema AY 2026-27 V1.1",
+      "act_namespace": "ITA_1961",
+      "applicable_periods": ["AY 2026-27"],
+      "official_url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-06/ITR-2_2026_Main_V1.1.json"
+    },
+    {
+      "source_type": "ITR_VALIDATION",
+      "title": "ITR-1 Validation Rules AY 2026-27 V1.0",
+      "act_namespace": "ITA_1961",
+      "applicable_periods": ["AY 2026-27"],
+      "official_url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-05/CBDT_e-Filing_ITR%201_Validation%20Rules_AY%202026-27.pdf"
+    },
+    {
+      "source_type": "ITR_VALIDATION",
+      "title": "ITR-2 Validation Rules AY 2026-27 V1.0",
+      "act_namespace": "ITA_1961",
+      "applicable_periods": ["AY 2026-27"],
+      "official_url": "https://www.incometax.gov.in/iec/foportal/sites/default/files/2026-05/CBDT__e-Filing_ITR%202_Validation%20Rules_AY%202026-27_V1.0.pdf"
+    },
+    {
+      "source_type": "TRANSITION_GUIDANCE",
+      "title": "FAQs on Interplay and Transition to Income-tax Act, 2025",
+      "act_namespace": "ITA_2025",
+      "applicable_periods": ["Tax Year 2026-27"],
+      "official_url": "https://incometaxindia.gov.in/documents/81799/11848482/Updated-FQAs-on-Interplay%26Transitions.pdf/e10ad2b6-9495-de90-58d3-20606d8954ae?t=1775128640970"
+    },
+    {
+      "source_type": "PORTAL_GUIDE",
+      "title": "Income Tax Return Downloads and Utilities",
+      "act_namespace": "ITA_1961",
+      "applicable_periods": ["AY 2026-27"],
+      "official_url": "https://www.incometax.gov.in/iec/foportal/downloads/income-tax-returns"
+    }
+  ]
+}

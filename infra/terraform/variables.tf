@@ -1,0 +1,13 @@
+variable "project" { type = string; default = "green-papaya" }
+variable "environment" { type = string; default = "production" }
+variable "aws_region" { type = string; default = "ap-south-1" }
+variable "domain_name" { type = string; default = "" }
+variable "db_instance_class" { type = string; default = "db.t4g.medium" }
+variable "redis_node_type" { type = string; default = "cache.t4g.small" }
+variable "db_name" { type = string; default = "green_papaya" }
+variable "db_username" { type = string; default = "green_papaya" }
+variable "db_password" { type = string; sensitive = true }
+variable "container_image_backend" { type = string; default = "" }
+variable "container_image_frontend" { type = string; default = "" }
+variable "allowed_cidrs" { type = list(string); default = ["0.0.0.0/0"] }
+variable "backup_retention_days" { type = number; default = 35 }
