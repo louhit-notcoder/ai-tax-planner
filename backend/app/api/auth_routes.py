@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..audit import append_audit
@@ -74,18 +76,28 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     the owner straight in — no invitation, no slug to invent.
     """
     email = str(payload.email).lower()
-    if db.scalar(select(User.id).where(User.email == email)):
+    try:
+        if db.scalar(select(User.id).where(User.email == email)):
+            raise HTTPException(status_code=409, detail="An account with this email already exists. Please sign in instead.")
+        tenant = Tenant(name=payload.firm_name, slug=_unique_tenant_slug(db, payload.firm_name), status="ACTIVE")
+        user = User(email=email, full_name=payload.full_name, password_hash=hash_password(payload.password), status="ACTIVE")
+        db.add_all([tenant, user]); db.flush()
+        membership = Membership(tenant_id=tenant.id, user_id=user.id, role="firm_owner", status="ACTIVE")
+        db.add(membership); db.flush()
+        actor = Actor(user.id, tenant.id, "firm_owner", False, frozenset({"*"}))
+        append_audit(db, actor=actor, action="tenant.signup", entity_type="tenant", entity_id=tenant.id, after={"name": tenant.name, "slug": tenant.slug})
+        result = _token_response(db, user, membership, request, response, mfa=True)
+        db.commit()
+        return result
+    except HTTPException:
+        raise
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(status_code=409, detail="An account with this email already exists. Please sign in instead.")
-    tenant = Tenant(name=payload.firm_name, slug=_unique_tenant_slug(db, payload.firm_name), status="ACTIVE")
-    user = User(email=email, full_name=payload.full_name, password_hash=hash_password(payload.password), status="ACTIVE")
-    db.add_all([tenant, user]); db.flush()
-    membership = Membership(tenant_id=tenant.id, user_id=user.id, role="firm_owner", status="ACTIVE")
-    db.add(membership); db.flush()
-    actor = Actor(user.id, tenant.id, "firm_owner", False, frozenset({"*"}))
-    append_audit(db, actor=actor, action="tenant.signup", entity_type="tenant", entity_id=tenant.id, after={"name": tenant.name, "slug": tenant.slug})
-    result = _token_response(db, user, membership, request, response, mfa=True)
-    db.commit()
-    return result
+    except Exception as exc:  # TEMP diagnostic: surface the real error (with CORS) instead of a blank 500
+        db.rollback()
+        logging.getLogger("green_papaya").exception("signup failed")
+        raise HTTPException(status_code=500, detail=f"signup_error: {type(exc).__name__}: {exc}")
 
 
 @router.post("/bootstrap", status_code=201)
