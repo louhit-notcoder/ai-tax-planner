@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.document_adapters.llm_adapters import BrokerCapitalGainsPDFAdapter, Form16LLMAdapter
+from app.document_adapters.llm_adapters import BankStatementPDFAdapter, BrokerCapitalGainsPDFAdapter, Form16LLMAdapter
 from app.document_adapters.vision import parse_model_fields
 
 
@@ -158,3 +158,35 @@ def test_broker_pdf_skips_incomplete_rows_with_warning():
 def test_broker_pdf_supports_gating():
     assert _broker(enabled=False).supports("pnl.pdf", "application/pdf", b"") == Decimal("0")
     assert _broker(enabled=True).supports("capital_gains_pnl.png", "image/png", b"") == Decimal("0.82")
+
+
+# --- bank statement PDF (interest) extraction -------------------------------
+
+def _bank(rows=None, enabled=True):
+    return BankStatementPDFAdapter(client=FakeVisionClient(enabled=enabled, rows=rows))
+
+
+def test_bank_pdf_extracts_interest_lines_and_computes_total():
+    rows = [
+        {"date": "2024-06-30", "description": "Savings interest credit", "amount": "1200.50", "confidence": 0.95, "page_index": 0},
+        {"date": "2024-09-30", "description": "FD interest", "amount": "8000", "confidence": 0.9, "page_index": 0},
+        {"date": "2024-07-01", "description": "not interest, ignored by amount<=0", "amount": "0", "confidence": 0.9},
+    ]
+    result = _bank(rows).extract("hdfc_statement.png", "image/png", b"")
+    lines = [c for c in result.claims if c.field_code == "OTHER_INCOME.BANK_INTEREST.TRANSACTION"]
+    total = next(c for c in result.claims if c.field_code == "OTHER_INCOME.BANK_INTEREST.TOTAL")
+    assert len(lines) == 2                       # zero-amount row dropped
+    assert total.value["amount"] == "9200.50"    # total computed here, not by the model
+    # total carries the lowest line confidence (most conservative)
+    assert total.confidence == Decimal("0.9")
+
+
+def test_bank_pdf_no_interest_warns():
+    result = _bank([]).extract("stmt.png", "image/png", b"")
+    assert not any(c.field_code == "OTHER_INCOME.BANK_INTEREST.TOTAL" for c in result.claims)
+    assert any("No interest credits" in w for w in result.warnings)
+
+
+def test_bank_pdf_supports_gating():
+    assert _bank(enabled=False).supports("stmt.pdf", "application/pdf", b"") == Decimal("0")
+    assert _bank(enabled=True).supports("bank_passbook.png", "image/png", b"") == Decimal("0.80")

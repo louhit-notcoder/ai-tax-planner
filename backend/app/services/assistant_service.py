@@ -35,6 +35,7 @@ TOOL_PERMISSION = {
     "show_portal_guide": "assistant:*",
     "compare_regimes": "computation:read",
     "summarise_discrepancies": "reconciliation:*",
+    "run_reconciliation": "reconciliation:*",
 }
 
 PORTAL_GUIDES = {
@@ -143,6 +144,11 @@ class AssistantToolGateway:
     def tool_summarise_discrepancies(self, db, actor, case, args, _key):
         rows = list(db.scalars(select(ReconciliationItem).where(ReconciliationItem.tenant_id == actor.tenant_id, ReconciliationItem.case_id == case.id)))
         return {"type": "discrepancy_summary", "items": [{"id": row.id, "category": row.category, "status": row.status, "source_values": row.source_values, "difference_amount": str(row.difference_amount) if row.difference_amount is not None else None, "resolution_note": row.resolution_note} for row in rows]}
+
+    def tool_run_reconciliation(self, db, actor, case, args, _key):
+        from .reconciliation_service import rebuild_reconciliation
+        result = rebuild_reconciliation(db, actor, case.id)
+        return {"type": "reconciliation", "difference_count": result["difference_count"], "items": result["reconciliation"]}
 
 
 gateway = AssistantToolGateway()

@@ -15,6 +15,7 @@ from ..document_adapters.registry import AdapterRegistry
 from ..document_security import inspect_document
 from ..security import Actor, assert_case_access, assert_case_mutable
 from ..storage import storage
+from .reconciliation_service import safe_rebuild
 
 registry = AdapterRegistry()
 
@@ -132,6 +133,8 @@ def extract_document(db: Session, *, actor: Actor, document_id: str) -> tuple[Do
         document.classification_metadata = {**document.classification_metadata, "adapter": adapter.code, "adapter_version": adapter.version, "warnings": result.warnings}
         db.flush()
         append_audit(db, actor=actor, action="document.extracted", entity_type="document", entity_id=document.id, case_id=document.case_id, after={"adapter": adapter.code, "claims": len(result.claims), "warnings": result.warnings})
+        # Refresh cross-document reconciliation now that a new source was added.
+        safe_rebuild(db, actor, document.case_id)
         return document, run, candidates
     except Exception as exc:
         run.status = "FAILED"

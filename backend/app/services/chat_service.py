@@ -73,6 +73,7 @@ def _tool_schemas() -> list[dict[str, Any]]:
         fn("explain_computation", "Explain a single line of the latest deterministic tax computation. Provide the calculation line code.",
            {"calculation_line": {"type": "string", "description": "The code or line_id of the calculation line to explain."}}, ["calculation_line"]),
         fn("compare_regimes", "Return the old-regime vs new-regime totals and the recommended regime from the latest computation.", {}),
+        fn("run_reconciliation", "Recompute cross-document reconciliation for this case, comparing the same figure across independent sources (Form 16 vs AIS salary; Form 16 vs AIS vs 26AS TDS; bank vs AIS interest; broker vs AIS securities sales). Returns each category as MATCHED, DIFFERENCE, or SINGLE_SOURCE so the CA can focus only on the mismatches.", {}),
         fn("summarise_discrepancies", "Summarise reconciliation discrepancies across sources (e.g. AIS vs broker vs Form 16).", {}),
         fn("show_portal_guide", "Return the approved step-by-step guide for downloading a document from the income-tax portal.",
            {"action": {"type": "string", "enum": ["download_ais", "download_26as", "download_prefill_json"]},

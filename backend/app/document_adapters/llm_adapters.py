@@ -373,3 +373,100 @@ class BrokerCapitalGainsPDFAdapter(LLMDocumentAdapter):
         if raw is None or str(raw).strip() == "":
             return None
         return str(raw).strip().lower() in {"yes", "y", "true", "1", "paid", "t"}
+
+
+class BankStatementPDFAdapter(LLMDocumentAdapter):
+    """Interest-income extraction from a bank statement PDF/scan.
+
+    Pulls each interest *credit* line (savings/FD interest paid by the bank) with
+    its date and amount, and computes the total in code (never trusting the model
+    to add). Bank statements are the least reliable source — AIS usually reports
+    interest more completely — so the total is emitted at the lowest line
+    confidence and every line stays individually reviewable.
+    """
+
+    code = "BANK_STATEMENT_PDF_LLM"
+    version = "3.0.0"
+    document_type = "BANK_STATEMENT"
+
+    instruction = (
+        "You read Indian bank account statements for a Chartered Accountant. Identify ONLY "
+        "interest credited by the bank to the account holder (savings-account interest, "
+        "fixed/term-deposit interest). Ignore all other credits (salary, transfers, refunds, "
+        "reversals). Report exactly what is printed; never total the figures yourself."
+    )
+
+    _COLUMNS = [
+        ("date", "value/transaction date of the interest credit"),
+        ("description", "the narration/description text of the interest credit"),
+        ("amount", "the interest amount credited in rupees (plain number)"),
+    ]
+
+    _TOKENS = ("statement", "account number", "a/c no", "transaction date", "narration", "closing balance", "ifsc")
+
+    def _detect(self, filename: str, mime_type: str, content: bytes) -> Decimal:
+        mime = (mime_type or "").lower()
+        name = (filename or "").lower()
+        if "pdf" in mime or name.endswith(".pdf"):
+            try:
+                text = "\n".join(page["text"] for page in pdf_pages(content)[:3]).lower()
+            except Exception:
+                text = ""
+            hits = sum(1 for token in self._TOKENS if token in text)
+            has_bank = any(b in text for b in ("bank", "hdfc", "icici", "state bank", "sbi", "axis", "kotak"))
+            if has_bank and hits >= 2:
+                return min(Decimal("0.87") + Decimal("0.02") * hits, Decimal("0.97"))
+        if mime.startswith("image/") and re.search(r"bank|statement|passbook", name):
+            return Decimal("0.80")
+        return Decimal("0")
+
+    def _schema_hint(self) -> str:
+        cols = "\n".join(f"- {code}: {desc}" for code, desc in self._COLUMNS)
+        return (
+            "From the attached bank-statement pages, return EVERY interest-credit line (and nothing else).\n"
+            "Columns per line:\n" + cols +
+            "\n\nReturn strict JSON: {\"items\": [{<columns above>, \"page_index\": <0-based>, "
+            "\"confidence\": <0..1>}]}. Plain rupee numbers, no symbols/commas. If there are no interest "
+            "credits, return {\"items\": []}. Never invent a line or compute a total."
+        )
+
+    def extract(self, filename: str, mime_type: str, content: bytes) -> AdapterResult:
+        images = render_document_images(content, mime_type)
+        try:
+            rows = self.client.extract(images, self.instruction, self._schema_hint())
+        except Exception as exc:
+            return AdapterResult(self.code, self.version, self.document_type, [], [f"Vision extraction failed: {exc}"], {"page_count": len(images), "extraction": "llm", "failed": True})
+        claims: list[ExtractedClaim] = []
+        total = Decimal("0")
+        confidences: list[Decimal] = []
+        for idx, row in enumerate(rows):
+            amount = parse_decimal(row.get("amount"))
+            if amount is None or amount <= 0:
+                continue
+            confidence = self._clamp_confidence(row.get("confidence"))
+            confidences.append(confidence)
+            total += amount
+            page_index = self._page_index(row.get("page_index"), len(images))
+            quote = str(row.get("description") or "").strip() or None
+            claims.append(ExtractedClaim(
+                field_code="OTHER_INCOME.BANK_INTEREST.TRANSACTION",
+                value_type="money",
+                value=money_value(amount),
+                source=SourceLocation(page_index=page_index, bounding_box=None, original_text=quote),
+                confidence=confidence,
+                entity_key=f"INT_{idx}",
+            ))
+        warnings = ["Bank-statement interest is less complete than AIS; confirm against AIS and Form 26AS."]
+        if claims:
+            # Total is computed here from the line items, never read from the model.
+            claims.append(ExtractedClaim(
+                field_code="OTHER_INCOME.BANK_INTEREST.TOTAL",
+                value_type="money",
+                value=money_value(total),
+                source=SourceLocation(original_text="Sum of extracted interest-credit lines"),
+                confidence=min(confidences) if confidences else Decimal("0.5"),
+                validations=[{"code": "SUM_OF_TRANSACTION_ROWS", "status": "PASS", "line_count": len(confidences)}],
+            ))
+        else:
+            warnings.append("No interest credits were identified in this statement.")
+        return AdapterResult(self.code, self.version, self.document_type, claims, warnings, {"page_count": len(images), "extraction": "llm", "interest_line_count": len(confidences), "interest_total": format(total, "f")})
