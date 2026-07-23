@@ -94,10 +94,10 @@ def signup(payload: SignupRequest, request: Request, response: Response, db: Ses
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account with this email already exists. Please sign in instead.")
-    except Exception as exc:  # TEMP diagnostic: surface the real error (with CORS) instead of a blank 500
+    except Exception:
         db.rollback()
         logging.getLogger("green_papaya").exception("signup failed")
-        raise HTTPException(status_code=500, detail=f"signup_error: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Could not create the account. Please try again.")
 
 
 @router.post("/bootstrap", status_code=201)

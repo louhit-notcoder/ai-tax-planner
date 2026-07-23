@@ -20,12 +20,12 @@ class BootstrapRequest(StrictModel):
 
 
 class SignupRequest(StrictModel):
-    # Self-serve firm signup: no slug to invent (auto-generated), lighter password
-    # floor so getting into the product is one short form.
+    # Self-serve firm signup: no slug to invent (auto-generated). Password floor
+    # is 12 to match hash_password()'s policy (a shorter value is rejected there).
     firm_name: str = Field(min_length=2, max_length=200)
     full_name: str = Field(min_length=2, max_length=200)
     email: EmailStr
-    password: str = Field(min_length=8, max_length=200)
+    password: str = Field(min_length=12, max_length=200)
 
 
 class LoginRequest(StrictModel):

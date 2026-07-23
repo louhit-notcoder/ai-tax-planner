@@ -32,8 +32,8 @@ export default function LoginV3() {
       if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
         errors.email = "Please enter a valid email address";
       }
-      if (!form.password || form.password.length < 8) {
-        errors.password = "Password must be at least 8 characters";
+      if (!form.password || form.password.length < 12) {
+        errors.password = "Password must be at least 12 characters";
       }
     } else if (mode === "login") {
       if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
@@ -163,7 +163,7 @@ export default function LoginV3() {
               <div>
                 <Input
                   type="password"
-                  placeholder={mode === "signup" ? "Password (min 8 characters)" : "Password"}
+                  placeholder={mode === "signup" ? "Password (min 12 characters)" : "Password"}
                   value={form.password}
                   onChange={update("password")}
                 />
