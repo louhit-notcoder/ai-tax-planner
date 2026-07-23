@@ -2,5 +2,8 @@
   "buildCommand": "yarn install && yarn build",
   "outputDirectory": "dist",
   "installCommand": "yarn install --network-timeout 100000",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

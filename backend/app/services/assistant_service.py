@@ -158,6 +158,10 @@ class OpenRouterModelClient:
         self.api_key = os.getenv("OPENROUTER_API_KEY")
         self.model = os.getenv("OPENROUTER_ASSISTANT_MODEL", "")
         self.base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        # Zero-data-retention routing is opt-in: many providers (e.g. Google Gemini
+        # on OpenRouter) expose no ZDR route, and forcing it makes every request fail.
+        # data_collection stays "deny" so the provider still cannot train on the data.
+        self.require_zdr = os.getenv("OPENROUTER_REQUIRE_ZDR", "false").lower() == "true"
 
     def enabled(self) -> bool:
         return bool(self.api_key and self.model)
@@ -178,7 +182,7 @@ class OpenRouterModelClient:
                 "tools": tools,
                 "tool_choice": "auto",
                 "temperature": 0,
-                "provider": {"data_collection": "deny", "zdr": True},
+                "provider": {"data_collection": "deny", "zdr": self.require_zdr},
             },
             timeout=60,
         )
