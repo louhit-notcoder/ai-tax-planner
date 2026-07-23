@@ -554,3 +554,19 @@ class ChatMessage(Base, TimestampMixin):
     tool_trace: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(36))
     __table_args__ = (Index("ix_chat_messages_case_created", "case_id", "created_at"),)
+
+
+class DocumentPassword(Base, TimestampMixin):
+    """Encrypted store of working PDF passwords, scoped to a case.
+
+    Passwords are encrypted at rest (never stored in plaintext) and reused to
+    auto-unlock sibling documents in the same case, so the CA is asked at most
+    once per distinct password.
+    """
+
+    __tablename__ = "document_passwords"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=False)
+    case_id: Mapped[str] = mapped_column(ForeignKey("tax_cases.id", ondelete="CASCADE"), index=True, nullable=False)
+    password_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(36))

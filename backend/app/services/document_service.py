@@ -10,12 +10,34 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..audit import append_audit
-from ..db_models import CandidateFact, Document, DocumentVersion, EvidenceClaim, ExtractionRun
+from ..db_models import CandidateFact, Document, DocumentPassword, DocumentVersion, EvidenceClaim, ExtractionRun
 from ..document_adapters.registry import AdapterRegistry
+from ..document_adapters.pdf_security import is_encrypted, is_pdf, unlock_pdf
 from ..document_security import inspect_document
-from ..security import Actor, assert_case_access, assert_case_mutable
+from ..security import Actor, assert_case_access, assert_case_mutable, decrypt_text, encrypt_text
 from ..storage import storage
 from .reconciliation_service import safe_rebuild
+
+
+def case_passwords(db: Session, actor: Actor, case_id: str) -> list[str]:
+    """Decrypted PDF passwords remembered for this case."""
+    rows = db.scalars(select(DocumentPassword).where(
+        DocumentPassword.tenant_id == actor.tenant_id,
+        DocumentPassword.case_id == case_id,
+    ))
+    passwords: list[str] = []
+    for row in rows:
+        try:
+            passwords.append(decrypt_text(row.password_encrypted))
+        except Exception:
+            continue
+    return passwords
+
+
+def remember_password(db: Session, actor: Actor, case_id: str, password: str) -> None:
+    if password in case_passwords(db, actor, case_id):
+        return
+    db.add(DocumentPassword(tenant_id=actor.tenant_id, case_id=case_id, password_encrypted=encrypt_text(password), created_by=actor.user_id))
 
 registry = AdapterRegistry()
 
@@ -23,6 +45,20 @@ registry = AdapterRegistry()
 def upload_document(db: Session, *, actor: Actor, case_id: str, filename: str, content_type: str, data: bytes) -> Document:
     case = assert_case_access(db, actor, case_id, "document:*")
     assert_case_mutable(case)
+    # Password-protected PDF (Form 16 / AIS / TIS / bank statements): try passwords
+    # already known for this case; if none open it, store it and mark it locked so
+    # the CA is prompted once. Everything downstream then sees decrypted bytes.
+    locked = False
+    if is_pdf(filename, content_type, data) and is_encrypted(data):
+        unlocked = None
+        for password in case_passwords(db, actor, case_id):
+            unlocked = unlock_pdf(data, password)
+            if unlocked is not None:
+                break
+        if unlocked is not None:
+            data = unlocked
+        else:
+            locked = True
     inspection = inspect_document(filename, content_type, data)
     duplicate = db.scalar(select(Document).where(Document.tenant_id == actor.tenant_id, Document.case_id == case_id, Document.sha256 == inspection.sha256))
     if duplicate:
@@ -36,13 +72,13 @@ def upload_document(db: Session, *, actor: Actor, case_id: str, filename: str, c
         case_id=case_id,
         uploaded_by=actor.user_id,
         document_type="UNKNOWN",
-        state="SECURITY_CHECKED",
+        state="PASSWORD_REQUIRED" if locked else "SECURITY_CHECKED",
         original_filename=filename,
         mime_type=content_type or "application/octet-stream",
         size_bytes=inspection.size_bytes,
         sha256=inspection.sha256,
         storage_key=stored.key,
-        is_password_protected=False,
+        is_password_protected=locked,
         classification_metadata={"detected_kind": inspection.detected_kind, "malware_scan": inspection.malware_scan},
     )
     version = DocumentVersion(
@@ -67,6 +103,8 @@ def extract_document(db: Session, *, actor: Actor, document_id: str) -> tuple[Do
         raise HTTPException(status_code=404, detail="Document not found")
     case = assert_case_access(db, actor, document.case_id, "document:*")
     assert_case_mutable(case)
+    if document.state == "PASSWORD_REQUIRED":
+        raise HTTPException(status_code=409, detail={"message": "This document is password protected. Provide the password to unlock it first.", "document_id": document.id, "requires_password": True})
     data = storage.get(document.storage_key)
     adapter, score = registry.classify(document.original_filename, document.mime_type, data)
     if not adapter:
@@ -143,3 +181,31 @@ def extract_document(db: Session, *, actor: Actor, document_id: str) -> tuple[Do
         document.state = "PARSER_FAILED"
         db.flush()
         raise
+
+
+def unlock_document(db: Session, *, actor: Actor, document_id: str, password: str) -> Document:
+    """Unlock a password-protected document: decrypt the stored file in place,
+    clear the locked state, and remember the password for the case so sibling
+    documents auto-unlock. Downstream reads then need no password.
+    """
+    document = db.scalar(select(Document).where(Document.id == document_id, Document.tenant_id == actor.tenant_id))
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    case = assert_case_access(db, actor, document.case_id, "document:*")
+    assert_case_mutable(case)
+    data = storage.get(document.storage_key)
+    if not is_encrypted(data):
+        document.state = "SECURITY_CHECKED"
+        document.is_password_protected = False
+        db.flush()
+        return document
+    unlocked = unlock_pdf(data, password)
+    if unlocked is None:
+        raise HTTPException(status_code=400, detail="Incorrect password for this document.")
+    storage.put(key=document.storage_key, data=unlocked, content_type=document.mime_type, metadata={"tenant_id": actor.tenant_id, "case_id": document.case_id})
+    document.state = "SECURITY_CHECKED"
+    document.is_password_protected = False
+    remember_password(db, actor, document.case_id, password)
+    append_audit(db, actor=actor, action="document.unlocked", entity_type="document", entity_id=document.id, case_id=document.case_id, after={"filename": document.original_filename})
+    db.flush()
+    return document

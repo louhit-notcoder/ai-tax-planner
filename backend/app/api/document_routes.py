@@ -5,13 +5,19 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel, Field
+
 from ..database import get_db
 from ..db_models import CandidateFact, Document, EvidenceClaim, ExtractionRun
 from ..security import Actor, assert_case_access, get_actor, require_permission
-from ..services.document_service import extract_document, upload_document
+from ..services.document_service import extract_document, unlock_document, upload_document
 from ..storage import storage
 
 router = APIRouter(tags=["documents"])
+
+
+class UnlockRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
 
 
 @router.post("/cases/{case_id}/documents", status_code=201)
@@ -34,8 +40,19 @@ def _document_out(row: Document):
         "sha256": row.sha256,
         "classification_confidence": str(row.classification_confidence) if row.classification_confidence is not None else None,
         "classification_metadata": row.classification_metadata,
+        "requires_password": row.state == "PASSWORD_REQUIRED",
         "created_at": row.created_at,
     }
+
+
+@router.post("/documents/{document_id}/unlock")
+def unlock(document_id: str, payload: UnlockRequest, actor: Actor = Depends(require_permission("document:*")), db: Session = Depends(get_db)):
+    """Unlock a password-protected document, then parse it in one step."""
+    unlock_document(db, actor=actor, document_id=document_id, password=payload.password)
+    db.commit()  # persist the unlock + remembered password even if extraction has issues
+    document, run, candidates = extract_document(db, actor=actor, document_id=document_id)
+    db.commit()
+    return {"document": _document_out(document), "extraction_run": {"id": run.id, "adapter": run.adapter_code, "version": run.adapter_version, "status": run.status, "metrics": run.metrics}, "candidate_fact_ids": [item.id for item in candidates], "unlocked": True}
 
 
 @router.get("/cases/{case_id}/documents")
