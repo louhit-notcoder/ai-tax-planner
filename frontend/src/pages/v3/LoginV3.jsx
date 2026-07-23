@@ -12,7 +12,7 @@ export default function LoginV3() {
   const [invitationToken] = useState(() => new URLSearchParams(window.location.search).get("invitation"));
   const [mode, setMode] = useState(invitationToken ? "invitation" : "login");
   useEffect(() => { if (invitationToken) window.history.replaceState({}, "", window.location.pathname); }, [invitationToken]);
-  const [form, setForm] = useState({ email: "", password: "", tenant_slug: "", totp_code: "", firm_name: "", firm_slug: "", owner_name: "" });
+  const [form, setForm] = useState({ email: "", password: "", tenant_slug: "", totp_code: "", firm_name: "", owner_name: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
@@ -22,14 +22,9 @@ export default function LoginV3() {
   const validateForm = () => {
     const errors = {};
 
-    if (mode === "bootstrap") {
+    if (mode === "signup") {
       if (!form.firm_name || form.firm_name.length < 2) {
         errors.firm_name = "Firm name must be at least 2 characters";
-      }
-      if (!form.firm_slug || form.firm_slug.length < 3) {
-        errors.firm_slug = "Firm slug must be at least 3 characters";
-      } else if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(form.firm_slug)) {
-        errors.firm_slug = "Use lowercase letters, numbers, and hyphens only (no leading/trailing hyphens)";
       }
       if (!form.owner_name || form.owner_name.length < 2) {
         errors.owner_name = "Name must be at least 2 characters";
@@ -37,8 +32,8 @@ export default function LoginV3() {
       if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
         errors.email = "Please enter a valid email address";
       }
-      if (!form.password || form.password.length < 12) {
-        errors.password = "Password must be at least 12 characters";
+      if (!form.password || form.password.length < 8) {
+        errors.password = "Password must be at least 8 characters";
       }
     } else if (mode === "login") {
       if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
@@ -72,10 +67,9 @@ export default function LoginV3() {
 
     setBusy(true);
     try {
-      const endpoint = mode === "bootstrap" ? "/auth/bootstrap" : mode === "invitation" ? "/auth/invitations/accept" : "/auth/login";
-      const payload = mode === "bootstrap" ? {
-        firm_name: form.firm_name, firm_slug: form.firm_slug, owner_name: form.owner_name,
-        owner_email: form.email, password: form.password,
+      const endpoint = mode === "signup" ? "/auth/signup" : mode === "invitation" ? "/auth/invitations/accept" : "/auth/login";
+      const payload = mode === "signup" ? {
+        firm_name: form.firm_name, full_name: form.owner_name, email: form.email, password: form.password,
       } : mode === "invitation" ? { token: invitationToken, full_name: form.owner_name, password: form.password } : { email: form.email, password: form.password, tenant_slug: form.tenant_slug || null, totp_code: form.totp_code || null };
       const { data } = await api.post(endpoint, payload);
       if (data.tenant_selection_required) throw new Error("Enter the firm slug for the tenant you want to access.");
@@ -119,12 +113,12 @@ export default function LoginV3() {
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>
-              {mode === "bootstrap" ? "Create your CA firm" : mode === "invitation" ? "Accept firm invitation" : "Sign in to your firm"}
+              {mode === "signup" ? "Create your CA firm" : mode === "invitation" ? "Accept firm invitation" : "Sign in to your firm"}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={submit}>
-              {mode === "bootstrap" && (
+              {mode === "signup" && (
                 <>
                   <div>
                     <Input
@@ -133,14 +127,6 @@ export default function LoginV3() {
                       onChange={update("firm_name")}
                     />
                     {validationErrors.firm_name && <p className="text-xs text-red-500 mt-1">{validationErrors.firm_name}</p>}
-                  </div>
-                  <div>
-                    <Input
-                      placeholder="Firm slug (e.g., sharma-ca) - lowercase only"
-                      value={form.firm_slug}
-                      onChange={update("firm_slug")}
-                    />
-                    {validationErrors.firm_slug && <p className="text-xs text-red-500 mt-1">{validationErrors.firm_slug}</p>}
                   </div>
                   <div>
                     <Input
@@ -177,7 +163,7 @@ export default function LoginV3() {
               <div>
                 <Input
                   type="password"
-                  placeholder={mode === "bootstrap" ? "Password (min 12 characters)" : "Password"}
+                  placeholder={mode === "signup" ? "Password (min 8 characters)" : "Password"}
                   value={form.password}
                   onChange={update("password")}
                 />
@@ -207,7 +193,7 @@ export default function LoginV3() {
               )}
 
               <Button type="submit" className="w-full" disabled={busy}>
-                {busy ? "Please wait…" : mode === "bootstrap" ? "Create firm" : mode === "invitation" ? "Accept invitation" : "Sign in"}
+                {busy ? "Please wait…" : mode === "signup" ? "Create firm" : mode === "invitation" ? "Accept invitation" : "Sign in"}
               </Button>
             </form>
 
@@ -215,7 +201,7 @@ export default function LoginV3() {
               <button
                 className="mt-4 text-sm text-center w-full text-slate-600 hover:text-slate-900 underline"
                 onClick={() => {
-                  setMode(mode === "login" ? "bootstrap" : "login");
+                  setMode(mode === "login" ? "signup" : "login");
                   setError("");
                   setValidationErrors({});
                 }}

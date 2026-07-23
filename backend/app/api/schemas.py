@@ -19,6 +19,15 @@ class BootstrapRequest(StrictModel):
     password: str = Field(min_length=12, max_length=200)
 
 
+class SignupRequest(StrictModel):
+    # Self-serve firm signup: no slug to invent (auto-generated), lighter password
+    # floor so getting into the product is one short form.
+    firm_name: str = Field(min_length=2, max_length=200)
+    full_name: str = Field(min_length=2, max_length=200)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+
+
 class LoginRequest(StrictModel):
     email: EmailStr
     password: str
