@@ -44,11 +44,14 @@ def compose_case_summary(
     facts: Iterable[dict[str, Any]],
     reconciliation: Iterable[dict[str, Any]] = (),
     missing: Iterable[str] = (),
+    documents: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a consolidated summary payload.
 
     ``facts`` is an iterable of ``{"field_code", "value_json"}`` (the reviewed or
     extracted facts). ``reconciliation`` is the output of compute_reconciliation.
+    ``documents`` reports processing status (counts by state + extraction
+    warnings) so the summary can explain WHY there is no data yet.
     """
     sections: dict[str, dict[str, Any]] = {}
     capital_gain_count = 0

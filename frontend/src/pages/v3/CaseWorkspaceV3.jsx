@@ -151,7 +151,7 @@ export default function CaseWorkspaceV3() {
 
   // Document upload state
   const [uploadQueue, setUploadQueue] = useState([]);
-  const [showUploadPanel, setShowUploadPanel] = useState(true);
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [passwordModal, setPasswordModal] = useState({ open: false, docId: null, filename: '' });
   const [password, setPassword] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -342,6 +342,14 @@ export default function CaseWorkspaceV3() {
   };
 
   const requestConsolidatedSummary = async (files) => {
+    // Only ask for summary if at least one file was successfully processed
+    const successfulFiles = (files || []).filter(f => f.status === 'COMPLETED');
+    if (successfulFiles.length === 0) {
+      addSystemMessage("No documents were processed successfully. Please try uploading again.");
+      setShowUploadPanel(false);
+      return;
+    }
+
     const names = (files || []).map((f) => f.name).filter(Boolean).join(', ');
     setChatBusy(true);
     setMessages((prev) => [
@@ -355,7 +363,7 @@ export default function CaseWorkspaceV3() {
       });
       setMessages((prev) => [
         ...prev,
-        { id: data.id || `assistant-${Date.now()}`, role: 'assistant', content: data.content, timestamp: new Date().toISOString() },
+        { id: data.id || `assistant-${Date.now()}`, role: 'assistant', content: typeof data.content === 'string' ? data.content : JSON.stringify(data.content), timestamp: new Date().toISOString() },
       ]);
       load();
     } catch (err) {
@@ -524,12 +532,13 @@ export default function CaseWorkspaceV3() {
       const { data } = await api.post(`/cases/${id}/assistant/chat`, { message: text });
 
       // Add assistant response
+      const assistantContent = typeof data.content === 'string' ? data.content : JSON.stringify(data.content);
       setMessages((prev) => [
         ...prev,
         {
           id: data.id || `assistant-${Date.now()}`,
           role: 'assistant',
-          content: data.content,
+          content: assistantContent,
           documents: data.documents || [],
           facts_extracted: data.facts_extracted || [],
           computation_update: data.computation_update || null,
@@ -1084,11 +1093,12 @@ export default function CaseWorkspaceV3() {
 function ChatMessage({ message, onCopy, copiedId }) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
+  const content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
 
   if (isSystem) {
     return (
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm">
-        <div dangerouslySetInnerHTML={{ __html: formatMarkdown(message.content) }} />
+        <div dangerouslySetInnerHTML={{ __html: formatMarkdown(content) }} />
       </div>
     );
   }
@@ -1108,7 +1118,7 @@ function ChatMessage({ message, onCopy, copiedId }) {
             isUser ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-800'
           } ${isUser ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}
         >
-          <div dangerouslySetInnerHTML={{ __html: formatMarkdown(message.content) }} />
+          <div dangerouslySetInnerHTML={{ __html: formatMarkdown(content) }} />
         </div>
         {message.documents?.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
@@ -1135,7 +1145,7 @@ function ChatMessage({ message, onCopy, copiedId }) {
         )}
         {!isUser && (
           <button
-            onClick={() => onCopy(message.id, message.content)}
+            onClick={() => onCopy(message.id, content)}
             className="mt-1 p-1 hover:bg-gray-100 rounded transition-colors"
           >
             {copiedId === message.id ? (
@@ -1152,7 +1162,7 @@ function ChatMessage({ message, onCopy, copiedId }) {
 
 function formatMarkdown(text) {
   if (!text) return '';
-  if (typeof text !== 'string') text = String(text);
+  if (typeof text !== 'string') text = JSON.stringify(text);
   return text
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
