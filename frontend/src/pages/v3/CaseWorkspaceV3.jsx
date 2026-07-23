@@ -311,7 +311,7 @@ export default function CaseWorkspaceV3() {
       name: file.name,
       size: file.size,
       type: file.type,
-      status: DOC_STATUS.PENDING,
+      status: 'PENDING',
       progress: 0,
       summary: null,
       error: null,
@@ -359,7 +359,7 @@ export default function CaseWorkspaceV3() {
 
   const processFile = async (uploadItem) => {
     // Update status to uploading
-    updateUploadItem(uploadItem.id, { status: DOC_STATUS.UPLOADING, progress: 10 });
+    updateUploadItem(uploadItem.id, { status: 'UPLOADING', progress: 10 });
 
     try {
       // Create form data
@@ -382,7 +382,7 @@ export default function CaseWorkspaceV3() {
       // Check if password is required
       if (uploadResult.status === 'password_required') {
         updateUploadItem(uploadItem.id, {
-          status: DOC_STATUS.PASSWORD_REQUIRED,
+          status: 'PASSWORD_REQUIRED',
           progress: 50,
           doc_id: uploadResult.document_id,
         });
@@ -395,13 +395,13 @@ export default function CaseWorkspaceV3() {
       }
 
       // Process the document
-      updateUploadItem(uploadItem.id, { status: DOC_STATUS.PROCESSING, progress: 60 });
+      updateUploadItem(uploadItem.id, { status: 'PROCESSING', progress: 60 });
 
       const { data: processResult } = await api.post(`/documents/${uploadResult.document_id}/process`);
 
       // Complete
       updateUploadItem(uploadItem.id, {
-        status: DOC_STATUS.COMPLETED,
+        status: 'COMPLETED',
         progress: 100,
         summary:
           processResult.summary ||
@@ -422,7 +422,7 @@ export default function CaseWorkspaceV3() {
       console.error('[Upload] Error:', err);
       const errorMsg = err.response?.data?.detail || err.message || 'Upload failed';
       updateUploadItem(uploadItem.id, {
-        status: DOC_STATUS.FAILED,
+        status: 'FAILED',
         progress: 0,
         error: errorMsg,
       });
@@ -446,7 +446,7 @@ export default function CaseWorkspaceV3() {
       );
 
       updateUploadItem(uploadItem.id, {
-        status: DOC_STATUS.COMPLETED,
+        status: 'COMPLETED',
         progress: 100,
         summary: processResult.summary || `Processed ${uploadItem.name} with password`,
       });
@@ -460,7 +460,7 @@ export default function CaseWorkspaceV3() {
     } catch (err) {
       const errorMsg = err.response?.data?.detail || 'Invalid password or processing failed';
       updateUploadItem(uploadItem.id, {
-        status: DOC_STATUS.FAILED,
+        status: 'FAILED',
         error: errorMsg,
       });
       addSystemMessage(`**${uploadItem.name}**: ${errorMsg}`);
@@ -703,7 +703,7 @@ export default function CaseWorkspaceV3() {
               ) : (
                 <div className="space-y-2">
                   {uploadQueue.map((item) => {
-                    const StatusConfig = DOC_STATUS[item.status];
+                    const StatusConfig = DOC_STATUS[item.status] || DOC_STATUS.PENDING;
                     const StatusIcon = StatusConfig.icon;
                     return (
                       <div
