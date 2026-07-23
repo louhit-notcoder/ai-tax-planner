@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.document_adapters.llm_adapters import Form16LLMAdapter
+from app.document_adapters.llm_adapters import BrokerCapitalGainsPDFAdapter, Form16LLMAdapter
 from app.document_adapters.vision import parse_model_fields
 
 
@@ -96,5 +96,65 @@ def test_supports_is_zero_when_model_unconfigured():
 def test_parse_model_fields_tolerates_fences_and_envelopes():
     assert parse_model_fields('```json\n{"fields": [{"field_code": "X"}]}\n```') == [{"field_code": "X"}]
     assert parse_model_fields('[{"field_code": "Y"}]') == [{"field_code": "Y"}]
+    assert parse_model_fields('{"items": [{"symbol": "Z"}]}') == [{"symbol": "Z"}]
     assert parse_model_fields("not json at all") == []
     assert parse_model_fields("") == []
+
+
+# --- broker capital-gains PDF (line-item) extraction ------------------------
+
+def _broker(rows=None, enabled=True):
+    return BrokerCapitalGainsPDFAdapter(client=FakeVisionClient(enabled=enabled, rows=rows))
+
+
+def test_broker_pdf_maps_transactions_with_asset_type_and_grandfathering():
+    rows = [
+        # equity (INE...), acquired before 31-Jan-2018 with a grandfathered FMV
+        {"symbol": "INFY", "isin": "INE009A01021", "acquisition_date": "2015-05-10", "transfer_date": "2024-08-01",
+         "sale_consideration": "300000", "actual_cost": "50000", "fmv_2018_01_31": "120000", "realized_gain": "250000",
+         "stt_paid": "yes", "confidence": 0.96, "page_index": 0},
+        # mutual fund (INF...), no grandfathering (bought after 2018)
+        {"symbol": "Parag Parikh Flexi Cap Fund", "isin": "INF879O01019", "acquisition_date": "2021-01-01",
+         "transfer_date": "2024-02-01", "sale_consideration": "150000", "actual_cost": "100000",
+         "realized_gain": "50000", "confidence": 0.9, "page_index": 0},
+    ]
+    result = _broker(rows).extract("zerodha_pnl.pdf", "image/png", b"")
+    assert len(result.claims) == 2
+    eq, mf = result.claims
+
+    assert eq.value["asset_type"] == "LISTED_EQUITY"
+    assert eq.value["sale_consideration"] == "300000"
+    assert eq.value["stt_paid_on_transfer"] is True
+    assert eq.value["fmv_2018_01_31"] == "120000"       # grandfathered value captured
+    assert eq.entity_key.startswith("TRADE_0_")
+
+    assert mf.value["asset_type"] == "EQUITY_MUTUAL_FUND"
+    assert "fmv_2018_01_31" not in mf.value             # acquired after 2018 -> not applicable
+
+
+def test_broker_pdf_flags_realized_gain_mismatch():
+    # stated realised gain disagrees with sale-cost-expenses => a column was misread
+    rows = [
+        {"symbol": "TCS", "isin": "INE467B01029", "acquisition_date": "2023-01-01", "transfer_date": "2024-01-02",
+         "sale_consideration": "200000", "actual_cost": "150000", "realized_gain": "999999", "confidence": 0.9, "page_index": 0},
+    ]
+    result = _broker(rows).extract("pnl.pdf", "image/png", b"")
+    claim = result.claims[0]
+    crosscheck = next(v for v in claim.validations if v["code"] == "REALIZED_GAIN_CROSSCHECK")
+    assert crosscheck["status"] == "REVIEW"
+    assert any("does not match" in w for w in result.warnings)
+
+
+def test_broker_pdf_skips_incomplete_rows_with_warning():
+    rows = [
+        {"symbol": "GOOD", "acquisition_date": "2023-01-01", "transfer_date": "2024-01-02", "sale_consideration": "100", "actual_cost": "50", "confidence": 0.9, "page_index": 0},
+        {"symbol": "NO_DATES", "sale_consideration": "100", "actual_cost": "50"},  # missing dates -> skipped
+    ]
+    result = _broker(rows).extract("pnl.pdf", "image/png", b"")
+    assert len(result.claims) == 1
+    assert any("skipped" in w for w in result.warnings)
+
+
+def test_broker_pdf_supports_gating():
+    assert _broker(enabled=False).supports("pnl.pdf", "application/pdf", b"") == Decimal("0")
+    assert _broker(enabled=True).supports("capital_gains_pnl.png", "image/png", b"") == Decimal("0.82")

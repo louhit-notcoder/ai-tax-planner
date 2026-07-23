@@ -135,7 +135,12 @@ def parse_model_fields(text: str) -> list[dict[str, Any]]:
     except (json.JSONDecodeError, ValueError):
         return []
     if isinstance(data, dict):
-        data = data.get("fields") or data.get("claims") or []
+        for key in ("fields", "claims", "items", "transactions", "rows"):
+            if isinstance(data.get(key), list):
+                data = data[key]
+                break
+        else:
+            data = []
     if not isinstance(data, list):
         return []
     return [row for row in data if isinstance(row, dict)]

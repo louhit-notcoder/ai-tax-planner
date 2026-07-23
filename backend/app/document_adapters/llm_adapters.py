@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -201,3 +202,174 @@ class Form16LLMAdapter(LLMDocumentAdapter):
     @staticmethod
     def _slug(value: str) -> str:
         return re.sub(r"[^A-Z0-9]+", "_", (value or "").upper()).strip("_")[:80] or "EMPLOYER_1"
+
+
+# Grandfathering under section 112A only applies to equity/equity-MF acquired on
+# or before this date; FMV as on 31-Jan-2018 is otherwise irrelevant.
+GRANDFATHER_DATE = date(2018, 1, 31)
+_DATE_FORMATS = ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d %b %Y", "%d-%b-%Y", "%b %d, %Y", "%Y/%m/%d", "%d.%m.%Y", "%Y-%m-%d %H:%M:%S")
+
+
+class BrokerCapitalGainsPDFAdapter(LLMDocumentAdapter):
+    """Transaction-level capital-gains extraction from a broker PDF tax P&L.
+
+    Brokers give a PDF far more often than a clean CSV/Excel, and the taxable
+    figure depends on *per-transaction* facts (holding period, STT, 112A
+    grandfathering) — so we extract each trade as its own reviewable object claim
+    that maps onto the engine's CapitalGainTransaction, never a pre-summed total.
+    """
+
+    code = "BROKER_CAPITAL_GAINS_PDF_LLM"
+    version = "3.0.0"
+    document_type = "BROKER_CAPITAL_GAINS"
+
+    instruction = (
+        "You read Indian broker capital-gains / realised P&L statements (Zerodha, Groww, "
+        "ICICI Direct, etc.) for a Chartered Accountant. Report every disposal transaction "
+        "exactly as printed. Never sum, net, or compute gains yourself; copy the numbers as shown."
+    )
+
+    # Columns requested per transaction row.
+    _COLUMNS = [
+        ("symbol", "security / scrip / scheme name"),
+        ("isin", "ISIN if shown (e.g. INE009A01021)"),
+        ("acquisition_date", "buy / acquisition / entry date"),
+        ("transfer_date", "sell / transfer / exit date"),
+        ("sale_consideration", "sell/sale value or consideration in rupees (plain number)"),
+        ("actual_cost", "buy/purchase/acquisition cost in rupees (plain number)"),
+        ("transfer_expenses", "charges/brokerage/expenses in rupees if shown, else omit"),
+        ("fmv_2018_01_31", "grandfathered / fair market value as on 31-Jan-2018 if shown, else omit"),
+        ("realized_gain", "the broker's own stated realised profit/loss for the row (for cross-check)"),
+        ("stt_paid", "whether STT was paid: true/false"),
+    ]
+
+    _TOKENS = ("capital gain", "tradewise", "realized", "realised", "profit and loss", "p&l", "pnl", "sale value", "buy value", "holding period", "short term", "long term", "grandfathered")
+
+    def _detect(self, filename: str, mime_type: str, content: bytes) -> Decimal:
+        mime = (mime_type or "").lower()
+        name = (filename or "").lower()
+        if "pdf" in mime or name.endswith(".pdf"):
+            try:
+                text = "\n".join(page["text"] for page in pdf_pages(content)[:4]).lower()
+            except Exception:
+                text = ""
+            hits = sum(1 for token in self._TOKENS if token in text)
+            if hits >= 2:
+                return min(Decimal("0.86") + Decimal("0.03") * hits, Decimal("0.98"))
+        if mime.startswith("image/") and re.search(r"capital|gain|pnl|tradewise", name):
+            return Decimal("0.82")
+        return Decimal("0")
+
+    def _schema_hint(self) -> str:
+        cols = "\n".join(f"- {code}: {desc}" for code, desc in self._COLUMNS)
+        return (
+            "Extract EVERY capital-gains transaction (one object per disposal row) from the attached pages.\n"
+            "Columns per transaction:\n" + cols +
+            "\n\nReturn strict JSON: {\"items\": [{<columns above>, \"page_index\": <0-based>, "
+            "\"confidence\": <0..1>}]}. Use plain rupee numbers (no symbols/commas). Omit a column you "
+            "cannot read for a row. Never invent or compute a value; if a whole row is unreadable, skip it."
+        )
+
+    def extract(self, filename: str, mime_type: str, content: bytes) -> AdapterResult:
+        images = render_document_images(content, mime_type)
+        try:
+            rows = self.client.extract(images, self.instruction, self._schema_hint())
+        except Exception as exc:
+            return AdapterResult(self.code, self.version, self.document_type, [], [f"Vision extraction failed: {exc}"], {"page_count": len(images), "extraction": "llm", "failed": True})
+        warnings: list[str] = []
+        claims = self.transactions_from_rows(rows, page_count=len(images), warnings=warnings)
+        if not claims and not warnings:
+            warnings.append("No complete capital-gains transactions were recognised in this document.")
+        return AdapterResult(self.code, self.version, self.document_type, claims, warnings, {"page_count": len(images), "extraction": "llm", "raw_row_count": len(rows), "transaction_count": len(claims)})
+
+    def transactions_from_rows(self, rows: list[dict[str, Any]], *, page_count: int, warnings: list[str]) -> list[ExtractedClaim]:
+        claims: list[ExtractedClaim] = []
+        skipped = 0
+        for idx, row in enumerate(rows):
+            sale = parse_decimal(row.get("sale_consideration"))
+            cost = parse_decimal(row.get("actual_cost"))
+            acq = self._date(row.get("acquisition_date"))
+            transfer = self._date(row.get("transfer_date"))
+            if sale is None or cost is None or acq is None or transfer is None:
+                skipped += 1
+                continue
+            expenses = parse_decimal(row.get("transfer_expenses")) or Decimal("0")
+            symbol = str(row.get("symbol") or f"ROW_{idx}").strip()
+            isin = str(row.get("isin") or "").strip().upper()
+
+            values: dict[str, Any] = {
+                "asset_type": self._asset_type(isin, symbol),
+                "description": symbol,
+                "acquisition_date": acq,
+                "transfer_date": transfer,
+                "sale_consideration": format(sale, "f"),
+                "actual_cost": format(cost, "f"),
+                "transfer_expenses": format(expenses, "f"),
+                "stt_paid_on_transfer": self._bool(row.get("stt_paid")),
+            }
+            if isin:
+                values["isin"] = isin
+
+            validations: list[dict[str, Any]] = []
+            fmv = parse_decimal(row.get("fmv_2018_01_31"))
+            if fmv is not None and date.fromisoformat(acq) <= GRANDFATHER_DATE:
+                values["fmv_2018_01_31"] = format(fmv, "f")
+                validations.append({"code": "GRANDFATHERED_112A", "status": "PASS"})
+
+            # Cross-check the broker's stated realised gain against sale-cost-expenses.
+            # A mismatch usually means a column was misread — flag it for the CA.
+            realized = parse_decimal(row.get("realized_gain"))
+            if realized is not None:
+                computed = sale - cost - expenses
+                tolerance = max(Decimal("1"), abs(realized) * Decimal("0.01"))
+                status = "PASS" if abs(computed - realized) <= tolerance else "REVIEW"
+                validations.append({"code": "REALIZED_GAIN_CROSSCHECK", "status": status, "computed": format(computed, "f"), "stated": format(realized, "f")})
+                if status == "REVIEW":
+                    warnings.append(f"Row {idx + 1} ({symbol}): computed gain {computed} does not match the statement's {realized}; verify the columns.")
+
+            confidence = self._clamp_confidence(row.get("confidence"))
+            page_index = self._page_index(row.get("page_index"), page_count)
+            claims.append(ExtractedClaim(
+                field_code="CAPITAL_GAIN.TRANSACTION",
+                value_type="object",
+                value=values,
+                source=SourceLocation(page_index=page_index, bounding_box=None, original_text=None),
+                confidence=confidence,
+                validations=validations,
+                entity_key=f"TRADE_{idx}_{symbol}"[:160],
+            ))
+        if skipped:
+            warnings.append(f"{skipped} row(s) were skipped because a required field (sale, cost, or a date) was missing; review the source.")
+        return claims
+
+    @staticmethod
+    def _asset_type(isin: str, symbol: str) -> str:
+        # Indian ISIN convention: INF... = mutual fund, INE... = company equity.
+        if isin.startswith("INF"):
+            return "EQUITY_MUTUAL_FUND"
+        if isin.startswith("INE"):
+            return "LISTED_EQUITY"
+        lowered = symbol.lower()
+        if "fund" in lowered or "scheme" in lowered or "mf" in lowered:
+            return "EQUITY_MUTUAL_FUND"
+        return "LISTED_EQUITY"
+
+    @staticmethod
+    def _date(raw: Any) -> str | None:
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        if not text:
+            return None
+        for fmt in _DATE_FORMATS:
+            try:
+                return datetime.strptime(text, fmt).date().isoformat()
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _bool(raw: Any) -> bool | None:
+        if raw is None or str(raw).strip() == "":
+            return None
+        return str(raw).strip().lower() in {"yes", "y", "true", "1", "paid", "t"}
