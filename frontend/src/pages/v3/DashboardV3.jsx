@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
+// FastAPI `detail` can be an object; rendering an object as a React child throws
+// (React error #31), so always reduce an error to a string.
+const errText = (err, fallback = "Something went wrong") => {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") return detail.message || detail.detail || JSON.stringify(detail);
+  return err?.message || fallback;
+};
+
 export default function DashboardV3() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -37,7 +46,7 @@ export default function DashboardV3() {
       setSummary(summaryRes.data || {});
     } catch (error) {
       console.error("[Dashboard] Load error:", error);
-      const message = error?.response?.data?.detail || error.message || "Failed to load data";
+      const message = errText(error, "Failed to load data");
       setLoadingError(message);
     } finally {
       setIsLoading(false);
@@ -60,7 +69,7 @@ export default function DashboardV3() {
       await load();
     } catch (error) {
       console.error("[Dashboard] Create client error:", error);
-      setLoadingError(error.response?.data?.detail || "Failed to create client");
+      setLoadingError(errText(error, "Failed to create client"));
     }
   };
 
@@ -75,7 +84,7 @@ export default function DashboardV3() {
       navigate(`/cases/${data.id}`);
     } catch (error) {
       console.error("[Dashboard] Create case error:", error);
-      setLoadingError(error.response?.data?.detail || "Failed to create case");
+      setLoadingError(errText(error, "Failed to create case"));
     }
   };
 
@@ -115,7 +124,7 @@ export default function DashboardV3() {
             <AlertCircle className="h-5 w-5 text-red-600" />
             <div>
               <p className="text-red-800 font-medium">Error</p>
-              <p className="text-red-600 text-sm">{loadingError}</p>
+              <p className="text-red-600 text-sm">{String(loadingError)}</p>
             </div>
             <Button variant="outline" size="sm" onClick={load} className="ml-auto">
               Retry

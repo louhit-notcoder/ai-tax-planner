@@ -79,6 +79,17 @@ const DOC_STATUS = {
   FAILED: { label: 'Failed', color: 'text-red-500', bg: 'bg-red-100', icon: AlertCircle },
 };
 
+// Always reduce an API/network error to a human string. FastAPI `detail` can be
+// an object (e.g. duplicate/password errors return {message, document_id, ...});
+// rendering an object as a React child throws (React error #31), so never let
+// one reach state or JSX.
+const errText = (err, fallback = 'Something went wrong') => {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object') return detail.message || detail.detail || JSON.stringify(detail);
+  return err?.message || fallback;
+};
+
 // Empty export identity template
 const emptyExportIdentity = {
   pan: '',
@@ -187,7 +198,7 @@ export default function CaseWorkspaceV3() {
       setExportsList(exportsRes.data);
       setAudit(auditRes.data);
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to load case');
+      setError(errText(err, 'Failed to load case'));
     }
   }, [id]);
 
@@ -350,7 +361,7 @@ export default function CaseWorkspaceV3() {
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { id: `sum-err-${Date.now()}`, role: 'assistant', content: `Couldn't generate the summary: ${err.response?.data?.detail || err.message || 'please try again.'}`, timestamp: new Date().toISOString() },
+        { id: `sum-err-${Date.now()}`, role: 'assistant', content: `Couldn't generate the summary: ${errText(err, 'please try again.')}`, timestamp: new Date().toISOString() },
       ]);
     } finally {
       setChatBusy(false);
@@ -420,7 +431,7 @@ export default function CaseWorkspaceV3() {
       load();
     } catch (err) {
       console.error('[Upload] Error:', err);
-      const errorMsg = err.response?.data?.detail || err.message || 'Upload failed';
+      const errorMsg = errText(err, 'Upload failed');
       updateUploadItem(uploadItem.id, {
         status: 'FAILED',
         progress: 0,
@@ -458,7 +469,7 @@ export default function CaseWorkspaceV3() {
       setDocuments(docsRes);
       load();
     } catch (err) {
-      const errorMsg = err.response?.data?.detail || 'Invalid password or processing failed';
+      const errorMsg = errText(err, 'Invalid password or processing failed');
       updateUploadItem(uploadItem.id, {
         status: 'FAILED',
         error: errorMsg,
@@ -538,7 +549,7 @@ export default function CaseWorkspaceV3() {
           id: `error-${Date.now()}`,
           role: 'assistant',
           content: `I encountered an issue processing your request. ${
-            err.response?.data?.detail || err.message || 'Please try again.'
+            errText(err, 'Please try again.')
           }`,
           timestamp: new Date().toISOString(),
         },
@@ -731,7 +742,7 @@ export default function CaseWorkspaceV3() {
                               </span>
                             )}
                             {item.error && (
-                              <span className="text-xs text-red-500 truncate">{item.error}</span>
+                              <span className="text-xs text-red-500 truncate">{String(item.error)}</span>
                             )}
                           </div>
                         </div>
@@ -1141,6 +1152,7 @@ function ChatMessage({ message, onCopy, copiedId }) {
 
 function formatMarkdown(text) {
   if (!text) return '';
+  if (typeof text !== 'string') text = String(text);
   return text
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')

@@ -7,6 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+// FastAPI `detail` can be an object; never let one reach JSX (React error #31).
+const errText = (err, fallback = "Something went wrong") => {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") return detail.message || detail.detail || JSON.stringify(detail);
+  return err?.message || fallback;
+};
+
 export default function LoginV3() {
   const { user, establishSession } = useAuth();
   const [invitationToken] = useState(() => new URLSearchParams(window.location.search).get("invitation"));
@@ -85,7 +93,7 @@ export default function LoginV3() {
         setValidationErrors(serverErrors);
         setError("Please fix the errors below");
       } else {
-        setError(err.response?.data?.detail || err.message || "Unable to sign in. Please try again.");
+        setError(errText(err, "Unable to sign in. Please try again."));
       }
     } finally {
       setBusy(false);
@@ -188,7 +196,7 @@ export default function LoginV3() {
               {error && (
                 <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
                   <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{error}</span>
+                  <span>{String(error)}</span>
                 </div>
               )}
 
