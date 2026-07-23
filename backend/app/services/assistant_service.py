@@ -36,6 +36,8 @@ TOOL_PERMISSION = {
     "compare_regimes": "computation:read",
     "summarise_discrepancies": "reconciliation:*",
     "run_reconciliation": "reconciliation:*",
+    "summarise_case": "assistant:*",
+    "run_computation": "computation:run",
 }
 
 PORTAL_GUIDES = {
@@ -149,6 +151,29 @@ class AssistantToolGateway:
         from .reconciliation_service import rebuild_reconciliation
         result = rebuild_reconciliation(db, actor, case.id)
         return {"type": "reconciliation", "difference_count": result["difference_count"], "items": result["reconciliation"]}
+
+    def tool_summarise_case(self, db, actor, case, args, _key):
+        from .case_summary_service import build_case_summary
+        return {"type": "case_summary", **build_case_summary(db, actor, case.id)}
+
+    def tool_run_computation(self, db, actor, case, args, _key):
+        from .computation_service import run_computation
+        regime = args.get("selected_regime") or case.selected_regime
+        run = run_computation(db, actor=actor, case_id=case.id, selected_regime=regime)
+        result = run.result_json or {}
+        selected = result.get("selected_result") or {}
+        return {
+            "type": "computation",
+            "status": result.get("status"),
+            "recommended_regime": result.get("recommended_regime"),
+            "selected_regime": result.get("selected_regime"),
+            "total_income": selected.get("total_income"),
+            "total_tax_liability": selected.get("total_tax_liability"),
+            "payable": selected.get("payable"),
+            "refund": selected.get("refund"),
+            "blocker_count": len(result.get("blockers") or []),
+            "warning_count": len(result.get("warnings") or []),
+        }
 
 
 gateway = AssistantToolGateway()

@@ -325,6 +325,36 @@ export default function CaseWorkspaceV3() {
     for (const uploadFile of newFiles) {
       await processFile(uploadFile);
     }
+
+    // After the whole batch, ask the assistant for ONE consolidated summary.
+    await requestConsolidatedSummary(newFiles);
+  };
+
+  const requestConsolidatedSummary = async (files) => {
+    const names = (files || []).map((f) => f.name).filter(Boolean).join(', ');
+    setChatBusy(true);
+    setMessages((prev) => [
+      ...prev,
+      { id: `sum-req-${Date.now()}`, role: 'user', content: `Uploaded: ${names || 'documents'}. Give me one consolidated summary.`, timestamp: new Date().toISOString() },
+    ]);
+    try {
+      const { data } = await api.post(`/cases/${id}/assistant/chat`, {
+        message:
+          `I've uploaded these documents: ${names}. Process everything together and give me ONE consolidated summary of the client's situation. Flag any mismatches across sources and any verifications needed (including Schedule FA / foreign assets and USD conversion), and list what is still missing or worth asking the client.`,
+      });
+      setMessages((prev) => [
+        ...prev,
+        { id: data.id || `assistant-${Date.now()}`, role: 'assistant', content: data.content, timestamp: new Date().toISOString() },
+      ]);
+      load();
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { id: `sum-err-${Date.now()}`, role: 'assistant', content: `Couldn't generate the summary: ${err.response?.data?.detail || err.message || 'please try again.'}`, timestamp: new Date().toISOString() },
+      ]);
+    } finally {
+      setChatBusy(false);
+    }
   };
 
   const processFile = async (uploadItem) => {
@@ -379,12 +409,8 @@ export default function CaseWorkspaceV3() {
         doc_id: uploadResult.document_id,
       });
 
-      // Add system message about the uploaded document
-      addSystemMessage(
-        `I've processed **${uploadItem.name}**. ${
-          processResult.summary || 'Facts have been extracted and are ready for your review.'
-        }`
-      );
+      // Per-document progress is shown in the upload queue, not the chat.
+      // One consolidated summary is posted after the whole batch (see handleFiles).
 
       // Refresh documents list
       const { data: docsRes } = await api.get(`/cases/${id}/documents`);

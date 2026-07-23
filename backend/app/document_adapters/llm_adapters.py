@@ -470,3 +470,136 @@ class BankStatementPDFAdapter(LLMDocumentAdapter):
         else:
             warnings.append("No interest credits were identified in this statement.")
         return AdapterResult(self.code, self.version, self.document_type, claims, warnings, {"page_count": len(images), "extraction": "llm", "interest_line_count": len(confidences), "interest_total": format(total, "f")})
+
+
+class USBrokerageForeignAssetPDFAdapter(LLMDocumentAdapter):
+    """Foreign assets + income from a US brokerage statement (Fidelity, Schwab,
+    Vanguard, Robinhood, etc.), for Schedule FA / FSI / FTC.
+
+    A resident who holds a US brokerage account must report it in Schedule FA and
+    the dividends/interest in Schedule FSI (with Form 67 for the US tax withheld).
+    This reads the account and its income into FOREIGN_ASSET / FOREIGN_INCOME.ITEM
+    facts. Statement amounts are in USD — the adapter carries them through as a
+    draft and flags CURRENCY_CONVERSION_REQUIRED so the CA applies the prescribed
+    SBI TT buying rate before finalising. The model never converts or totals.
+    """
+
+    code = "US_BROKERAGE_FA_PDF_LLM"
+    version = "3.0.0"
+    document_type = "US_BROKERAGE_STATEMENT"
+
+    instruction = (
+        "You read US brokerage / investment statements (Fidelity, Charles Schwab, Vanguard, "
+        "Robinhood, Morgan Stanley, E*TRADE, etc.) for an Indian Chartered Accountant handling "
+        "foreign-asset (Schedule FA) reporting. Report exactly what is printed, in USD. Never "
+        "convert currency, never total figures, never guess."
+    )
+
+    fields = [
+        FieldSpec("institution", "text", "brokerage/institution name (e.g. Fidelity)"),
+        FieldSpec("account_number_masked", "text", "account number, masked (last 4 digits ok)"),
+        FieldSpec("closing_value_usd", "money", "total account/portfolio value at period end, in USD"),
+        FieldSpec("peak_value_usd", "money", "highest/peak account value during the period, in USD, if shown"),
+        FieldSpec("dividends_usd", "money", "total dividends received during the period, in USD"),
+        FieldSpec("interest_usd", "money", "total interest received during the period, in USD"),
+        FieldSpec("foreign_tax_withheld_usd", "money", "US tax withheld on dividends/income, in USD"),
+    ]
+
+    _TOKENS = ("fidelity", "charles schwab", "schwab", "vanguard", "robinhood", "morgan stanley",
+               "e*trade", "etrade", "td ameritrade", "1099", "ordinary dividends", "cusip",
+               "brokerage", "portfolio value", "settlement date")
+
+    def _detect(self, filename: str, mime_type: str, content: bytes) -> Decimal:
+        mime = (mime_type or "").lower()
+        name = (filename or "").lower()
+        broker_names = ("fidelity", "schwab", "vanguard", "robinhood", "e*trade", "etrade", "td ameritrade", "morgan stanley")
+        if "pdf" in mime or name.endswith(".pdf"):
+            try:
+                text = "\n".join(page["text"] for page in pdf_pages(content)[:4]).lower()
+            except Exception:
+                text = ""
+            has_broker = any(b in text for b in broker_names)
+            hits = sum(1 for token in self._TOKENS if token in text)
+            # Require a US-broker signal (or a 1099 + dividends combo) to avoid
+            # colliding with the Indian capital-gains statement adapter.
+            if has_broker and hits >= 2:
+                return min(Decimal("0.90") + Decimal("0.02") * hits, Decimal("0.98"))
+            if ("1099" in text and "dividend" in text) and "$" in text:
+                return Decimal("0.86")
+        if mime.startswith("image/") and any(b in name for b in broker_names):
+            return Decimal("0.82")
+        return Decimal("0")
+
+    def extract(self, filename: str, mime_type: str, content: bytes) -> AdapterResult:
+        images = render_document_images(content, mime_type)
+        try:
+            rows = self.client.extract(images, self.instruction, self._schema_hint())
+        except Exception as exc:
+            return AdapterResult(self.code, self.version, self.document_type, [], [f"Vision extraction failed: {exc}"], {"page_count": len(images), "extraction": "llm", "failed": True})
+        # Read the flat fields into a name->(amount/text, confidence, page) map.
+        values: dict[str, Any] = {}
+        confidences: list[Decimal] = []
+        page_hint: int | None = None
+        for row in rows:
+            code = str(row.get("field_code", "")).strip()
+            if code not in {f.field_code for f in self.fields}:
+                continue
+            raw = row.get("value")
+            if raw is None or str(raw).strip() == "":
+                continue
+            values[code] = raw
+            confidences.append(self._clamp_confidence(row.get("confidence")))
+            if page_hint is None:
+                page_hint = self._page_index(row.get("page_index"), len(images))
+        return self._build_foreign_facts(values, confidences, page_hint, len(images))
+
+    def _build_foreign_facts(self, values: dict[str, Any], confidences: list[Decimal], page: int | None, page_count: int) -> AdapterResult:
+        institution = str(values.get("institution") or "US Brokerage").strip()
+        acct = str(values.get("account_number_masked") or "").strip()
+        closing = parse_decimal(values.get("closing_value_usd"))
+        peak = parse_decimal(values.get("peak_value_usd"))
+        dividends = parse_decimal(values.get("dividends_usd")) or Decimal("0")
+        interest = parse_decimal(values.get("interest_usd")) or Decimal("0")
+        withheld = parse_decimal(values.get("foreign_tax_withheld_usd")) or Decimal("0")
+        confidence = min(confidences) if confidences else Decimal("0.5")
+        entity = re.sub(r"[^A-Z0-9]+", "_", (institution + "_" + acct).upper()).strip("_")[:80] or "US_BROKERAGE"
+        source = SourceLocation(page_index=page, bounding_box=None, original_text="Amounts as printed in USD")
+        usd_review = {"code": "CURRENCY_CONVERSION_REQUIRED", "status": "REVIEW", "note": "USD draft — apply SBI TT buying rate to INR before finalising."}
+
+        claims: list[ExtractedClaim] = []
+        # Schedule FA — the account itself (Table A2: foreign custodial account).
+        asset: dict[str, Any] = {
+            "asset_id": f"FA_{entity}",
+            "schedule_fa_table": "A2",
+            "country_code": "US",
+            "institution_or_entity": institution,
+            "account_number_masked": acct or None,
+            "income_derived_inr": format(dividends + interest, "f"),
+            "ownership_type": "SINGLE",
+        }
+        if closing is not None:
+            asset["closing_value_inr"] = format(closing, "f")
+            asset["peak_value_inr"] = format(peak if peak is not None else closing, "f")
+        claims.append(ExtractedClaim(field_code="FOREIGN_ASSET", value_type="object", value=asset, source=source, confidence=confidence, validations=[usd_review], entity_key=f"FA_{entity}"))
+
+        # Schedule FSI/FTC — dividends and interest as foreign income.
+        for income_type, amount in (("DIVIDEND", dividends), ("INTEREST", interest)):
+            if amount <= 0:
+                continue
+            item: dict[str, Any] = {
+                "item_id": f"FSI_{entity}_{income_type}",
+                "country_code": "US",
+                "income_type": income_type,
+                "gross_income_inr": format(amount, "f"),
+                "foreign_tax_paid_inr": format(withheld if income_type == "DIVIDEND" else Decimal("0"), "f"),
+                "form_67_filed": False,
+            }
+            claims.append(ExtractedClaim(field_code="FOREIGN_INCOME.ITEM", value_type="object", value=item, source=source, confidence=confidence, validations=[usd_review], entity_key=item["item_id"]))
+
+        warnings = [
+            "US brokerage detected: Schedule FA (foreign asset) and Schedule FSI/FTC apply for a resident; Form 67 is required to claim credit for US tax withheld.",
+            "All amounts are in USD — apply the prescribed SBI TT buying rate to convert to INR before accepting these facts.",
+        ]
+        if closing is None:
+            warnings.append("Account value was not identified; Schedule FA needs the peak and closing balances.")
+        return AdapterResult(self.code, self.version, self.document_type, claims, warnings, {"page_count": page_count, "extraction": "llm", "currency": "USD", "foreign_asset_count": 1, "foreign_income_count": len(claims) - 1})

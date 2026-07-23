@@ -7,7 +7,7 @@ from .banks import BankStatementAdapter
 from .base import AdapterResult, DocumentAdapter
 from .brokers import BrokerCapitalGainsAdapter
 from .form16 import Form16Adapter
-from .llm_adapters import BankStatementPDFAdapter, BrokerCapitalGainsPDFAdapter, Form16LLMAdapter
+from .llm_adapters import BankStatementPDFAdapter, BrokerCapitalGainsPDFAdapter, Form16LLMAdapter, USBrokerageForeignAssetPDFAdapter
 from .previous_itr import PreviousITRJSONAdapter
 from .tis_26as import Form26ASAdapter, TISAdapter
 
@@ -17,7 +17,7 @@ class AdapterRegistry:
         # LLM-assisted adapters score 0 when the vision model is unconfigured, so
         # the deterministic regex/JSON adapters below remain the fallback.
         self.adapters = adapters or [
-            Form16LLMAdapter(), BrokerCapitalGainsPDFAdapter(), BankStatementPDFAdapter(),
+            Form16LLMAdapter(), BrokerCapitalGainsPDFAdapter(), BankStatementPDFAdapter(), USBrokerageForeignAssetPDFAdapter(),
             Form16Adapter(), AISJSONAdapter(), TISAdapter(), Form26ASAdapter(),
             BankStatementAdapter(), BrokerCapitalGainsAdapter(), PreviousITRJSONAdapter(),
         ]

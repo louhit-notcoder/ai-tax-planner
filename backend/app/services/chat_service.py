@@ -35,12 +35,10 @@ CORE RULES — these are absolute:
 4. You cannot approve facts, change rules, or file a return. When the client needs to answer something or provide a document, create a draft with `create_client_question_draft` or `create_document_request_draft` — a human CA approves it before it is sent.
 
 HOW TO WORK A CASE:
-- When documents have been uploaded, call `read_case_facts` to see what has been extracted and reviewed, and `list_missing_information` to see gaps.
-- Summarise the client's situation in plain language: salary/Form 16, house property, capital gains (listed equity, mutual funds, property), business/presumptive/F&O, other income, foreign income/assets (flag if Schedule FA / FSI / FTC / Form 67 may be needed), and deductions.
-- Proactively ask about likely-missing items: "Did the client sell any property or shares this year?", "Any foreign bank accounts, RSUs, or ESOPs?", "Interest from savings/FDs?", "Home loan?".
-- When the CA asks about a rule or limit, verify with `search_tax_law` rather than answering from memory.
-- Explain the recommended regime and the computation in clear, itemised terms the CA can defend.
-- When you need the client to fetch something (AIS, 26AS, pre-filled JSON), use `show_portal_guide` to give exact portal steps.
+- After documents are processed (the CA may upload several at once), call `summarise_case` ONCE and give a single consolidated summary of the whole client — not one blurb per document. Cover salary/Form 16, house property, capital gains, business, other income, foreign income/assets, and TDS, using the amounts in the tool result.
+- The `summarise_case` result includes `flags`, `reconciliation` differences, `missing`, and `suggested_questions`. Proactively raise the suggested questions and flag every mismatch and verification the CA must check (e.g. "AIS TDS ₹X differs from Form 16 ₹Y — please confirm"). For foreign assets, state clearly that Schedule FA and Form 67 apply and that USD amounts must be converted at the SBI TT buying rate.
+- When facts are added, corrected, or approved, call `run_computation` so the tax numbers reflect the latest information, then explain the result (recommended regime, total income, tax, payable/refund) in clear, defensible terms. You never change facts yourself — you PROPOSE with `propose_fact`, and a human CA approves before it becomes a tax input.
+- Use `read_case_facts`/`list_missing_information` for detail, `run_reconciliation` to refresh cross-checks, `search_tax_law` to verify any rule/limit, and `show_portal_guide` for exact portal steps (AIS/26AS/pre-filled JSON).
 
 STYLE:
 - Be concise but complete. Use short paragraphs and bullet points.
@@ -73,6 +71,9 @@ def _tool_schemas() -> list[dict[str, Any]]:
         fn("explain_computation", "Explain a single line of the latest deterministic tax computation. Provide the calculation line code.",
            {"calculation_line": {"type": "string", "description": "The code or line_id of the calculation line to explain."}}, ["calculation_line"]),
         fn("compare_regimes", "Return the old-regime vs new-regime totals and the recommended regime from the latest computation.", {}),
+        fn("summarise_case", "Produce ONE consolidated summary across every document processed for this case: income found (salary, interest, dividends, capital gains, foreign), how independent sources reconcile, what is still missing, verification flags (e.g. Schedule FA / USD conversion), and proactive questions to ask the client. Call this after documents are processed.", {}),
+        fn("run_computation", "Run the deterministic tax computation from the currently approved facts and return the totals (total income, tax, payable/refund, recommended regime, blockers). Use after facts have been added, corrected, or approved so the numbers reflect the latest information.",
+           {"selected_regime": {"type": "string", "enum": ["OLD", "NEW"], "description": "Optional regime to compute for; defaults to the case's current selection."}}),
         fn("run_reconciliation", "Recompute cross-document reconciliation for this case, comparing the same figure across independent sources (Form 16 vs AIS salary; Form 16 vs AIS vs 26AS TDS; bank vs AIS interest; broker vs AIS securities sales). Returns each category as MATCHED, DIFFERENCE, or SINGLE_SOURCE so the CA can focus only on the mismatches.", {}),
         fn("summarise_discrepancies", "Summarise reconciliation discrepancies across sources (e.g. AIS vs broker vs Form 16).", {}),
         fn("show_portal_guide", "Return the approved step-by-step guide for downloading a document from the income-tax portal.",

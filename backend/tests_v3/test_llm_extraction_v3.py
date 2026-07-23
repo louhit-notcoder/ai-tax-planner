@@ -9,8 +9,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.document_adapters.llm_adapters import BankStatementPDFAdapter, BrokerCapitalGainsPDFAdapter, Form16LLMAdapter
+from app.document_adapters.llm_adapters import (
+    BankStatementPDFAdapter,
+    BrokerCapitalGainsPDFAdapter,
+    Form16LLMAdapter,
+    USBrokerageForeignAssetPDFAdapter,
+)
 from app.document_adapters.vision import parse_model_fields
+from app.tax_engine.models import ForeignAsset, ForeignIncomeItem
 
 
 class FakeVisionClient:
@@ -190,3 +196,57 @@ def test_bank_pdf_no_interest_warns():
 def test_bank_pdf_supports_gating():
     assert _bank(enabled=False).supports("stmt.pdf", "application/pdf", b"") == Decimal("0")
     assert _bank(enabled=True).supports("bank_passbook.png", "image/png", b"") == Decimal("0.80")
+
+
+# --- US brokerage (Fidelity) -> Schedule FA / FSI -------------------------
+
+def _fidelity(rows=None, enabled=True):
+    return USBrokerageForeignAssetPDFAdapter(client=FakeVisionClient(enabled=enabled, rows=rows))
+
+
+def _field(code, value, **extra):
+    return {"field_code": code, "value": value, "confidence": 0.95, "page_index": 0, **extra}
+
+
+def test_fidelity_produces_valid_schedule_fa_and_fsi_facts():
+    rows = [
+        _field("institution", "Fidelity"),
+        _field("account_number_masked", "****1234"),
+        _field("closing_value_usd", "50000"),
+        _field("peak_value_usd", "62000"),
+        _field("dividends_usd", "800"),
+        _field("interest_usd", "0"),
+        _field("foreign_tax_withheld_usd", "200"),
+    ]
+    result = _fidelity(rows).extract("fidelity_statement.png", "image/png", b"")
+    by_code = {}
+    for c in result.claims:
+        by_code.setdefault(c.field_code, []).append(c)
+
+    # one Schedule FA asset + one dividend income item (interest is 0 -> skipped)
+    assert len(by_code["FOREIGN_ASSET"]) == 1
+    assert len(by_code["FOREIGN_INCOME.ITEM"]) == 1
+
+    asset = by_code["FOREIGN_ASSET"][0]
+    # the emitted value_json must be a VALID ForeignAsset (so it feeds the engine)
+    fa = ForeignAsset(**asset.value)
+    assert fa.schedule_fa_table == "A2"
+    assert fa.country_code == "US"
+    assert str(fa.peak_value_inr) == "62000"
+    assert str(fa.income_derived_inr) == "800"
+    assert any(v["code"] == "CURRENCY_CONVERSION_REQUIRED" for v in asset.validations)
+
+    div = by_code["FOREIGN_INCOME.ITEM"][0]
+    fsi = ForeignIncomeItem(**div.value)
+    assert fsi.income_type == "DIVIDEND"
+    assert str(fsi.gross_income_inr) == "800"
+    assert str(fsi.foreign_tax_paid_inr) == "200"
+    assert fsi.form_67_filed is False
+
+    assert any("Schedule FA" in w for w in result.warnings)
+    assert any("USD" in w for w in result.warnings)
+
+
+def test_fidelity_detection_vs_gating():
+    assert _fidelity(enabled=False).supports("fidelity.pdf", "application/pdf", b"") == Decimal("0")
+    assert _fidelity(enabled=True).supports("fidelity_2025.png", "image/png", b"") == Decimal("0.82")
