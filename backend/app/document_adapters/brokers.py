@@ -13,10 +13,16 @@ class BrokerCapitalGainsAdapter(DocumentAdapter):
 
     def supports(self, filename, mime_type, content):
         name = filename.lower()
-        if not name.endswith(".csv"):
+        if not (name.endswith(".csv") or name.endswith(".txt")):
             return Decimal("0")
-        if any(token in name for token in ["zerodha", "groww", "capital", "pnl", "gain", "trade"]):
+        if any(token in name for token in ["zerodha", "groww", "capital", "pnl", "gain", "trade", "tax", "stock", "upstox", "icici", "hdfc", "angel"]):
             return Decimal("0.85")
+        try:
+            sample = content[:4096].decode("utf-8-sig", errors="replace").lower()
+            if any(k in sample for k in ["symbol", "scrip", "buy date", "sell date", "sale value", "buy value", "isin", "stt", "acquisition"]):
+                return Decimal("0.80")
+        except Exception:
+            pass
         return Decimal("0.25")
 
     def extract(self, filename, mime_type, content):

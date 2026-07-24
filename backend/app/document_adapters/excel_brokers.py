@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -56,7 +56,7 @@ def _parse_date_excel(value: Any) -> str | None:
             excel_epoch = date_class(1899, 12, 30)
             result = excel_epoch.replace(year=excel_epoch.year) + datetime.min.replace(hour=0, minute=0, second=0, microsecond=0).replace(hour=0) - datetime.min
             # Simpler approach
-            d = datetime(1899, 12, 30) + datetime.timedelta(days=int(value))
+            d = datetime(1899, 12, 30) + timedelta(days=int(value))
             return d.date().isoformat()
         except Exception:
             return None
@@ -152,7 +152,7 @@ class ExcelCapitalGainsAdapter(DocumentAdapter):
             wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
             for sheet_name in wb.sheetnames:
                 sheet = wb[sheet_name]
-                text = " ".join(str(cell.value or "") for cell in sheet.iter_rows(max_row=10, max_col=10))
+                text = " ".join(str(cell.value or "") for row in sheet.iter_rows(max_row=10, max_col=10) for cell in row)
                 if any(k in text.lower() for k in ["capital gain", "capital loss", "sale proceeds", "buy", "sell", "equity", "mutual fund", "stocks", "shares", "trade"]):
                     return Decimal("0.85")
             wb.close()
@@ -257,7 +257,7 @@ class ExcelBankStatementAdapter(DocumentAdapter):
             wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
             for sheet_name in wb.sheetnames:
                 sheet = wb[sheet_name]
-                text = " ".join(str(cell.value or "") for cell in sheet.iter_rows(max_row=20, max_col=5))
+                text = " ".join(str(cell.value or "") for row in sheet.iter_rows(max_row=20, max_col=5) for cell in row)
                 if any(k in text.lower() for k in ["bank", "statement", "account", "transaction", "balance", "debit", "credit"]):
                     return Decimal("0.85")
             wb.close()

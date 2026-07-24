@@ -10,19 +10,34 @@ class BankStatementAdapter(DocumentAdapter):
     code = "BANK_STATEMENT_GENERIC"
     version = "3.0.0"
     document_type = "BANK_STATEMENT"
-    BANK_TOKENS = {"SBI": ["state bank of india", "sbi"], "HDFC": ["hdfc bank"], "ICICI": ["icici bank"]}
+    BANK_TOKENS = {
+        "SBI": ["state bank of india", "sbi"],
+        "HDFC": ["hdfc bank", "hdfc"],
+        "ICICI": ["icici bank", "icici"],
+        "KOTAK": ["kotak mahindra bank", "kotak"],
+        "AXIS": ["axis bank", "axis"],
+        "BOB": ["bank of baroda", "bob"],
+        "PNB": ["punjab national bank", "pnb"],
+        "CANARA": ["canara bank"],
+        "YES": ["yes bank"],
+        "INDUSIND": ["indusind bank"],
+    }
 
     def supports(self, filename, mime_type, content):
         name = filename.lower()
-        if name.endswith(".csv") and any(token in name for token in ["bank", "statement", "sbi", "hdfc", "icici"]):
+        if (name.endswith(".csv") or name.endswith(".txt")) and any(token in name for token in ["bank", "statement", "sbi", "hdfc", "icici", "kotak", "axis", "passbook", "account"]):
             return Decimal("0.80")
-        if name.endswith(".pdf"):
+        if name.endswith(".pdf") or "pdf" in (mime_type or "").lower():
             try:
-                text = "\n".join(page["text"] for page in pdf_pages(content)[:2]).lower()
+                text = "\n".join(page["text"] for page in pdf_pages(content)[:3]).lower()
             except Exception:
                 return Decimal("0")
-            if any(token in text for values in self.BANK_TOKENS.values() for token in values) and any(token in text for token in ["statement", "account number", "transaction date"]):
+            has_bank = any(token in text for values in self.BANK_TOKENS.values() for token in values) or any(t in name for t in ["bank", "statement", "passbook"])
+            has_stmt = any(token in text for token in ["statement", "account number", "account no", "transaction date", "opening balance", "closing balance", "credit", "debit", "particulars", "narration"])
+            if has_bank and has_stmt:
                 return Decimal("0.85")
+            elif has_stmt:
+                return Decimal("0.60")
         return Decimal("0")
 
     def extract(self, filename, mime_type, content):

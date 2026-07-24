@@ -14,30 +14,81 @@ class Form16Adapter(DocumentAdapter):
     def supports(self, filename, mime_type, content):
         if "pdf" not in mime_type.lower() and not filename.lower().endswith(".pdf"):
             return Decimal("0")
+        score = Decimal("0")
+        name = filename.lower()
+        if any(k in name for k in ["form16", "form-16", "form_16", "form 16", "f16"]):
+            score += Decimal("0.40")
         try:
             text = "\n".join(page["text"] for page in pdf_pages(content)[:3]).lower()
         except Exception:
-            return Decimal("0")
-        score = Decimal("0")
-        for token in ["form no. 16", "certificate under section 203", "part b", "tan of deductor"]:
-            if token in text:
-                score += Decimal("0.23")
+            return min(score, Decimal("0.99"))
+        
+        tokens = [
+            r"\bform\s*[-._]?\s*(?:no\.?\s*)?16\b",
+            r"\bcertificate\s+under\s+section\s+203\b",
+            r"\bpart\s*[-._]?\s*[ab]\b",
+            r"\btan\s+of\s+(?:the\s+)?deductor\b",
+            r"\bpan\s+of\s+(?:the\s+)?deductor\b",
+            r"\bpan\s+of\s+(?:the\s+)?employee\b",
+            r"\bgross\s+salary\b",
+            r"\btax\s+deducted\s+at\s+source\b",
+            r"\bsection\s+17\(1\)\b",
+        ]
+        for token in tokens:
+            if re.search(token, text):
+                score += Decimal("0.20")
         return min(score, Decimal("0.99"))
 
     def extract(self, filename, mime_type, content):
         pages = pdf_pages(content)
         full_text = "\n".join(page["text"] for page in pages)
-        employer = self._text_value(pages, [r"Name and address of the Employer\s*[:\-]?\s*([^\n]+)", r"Name of the Employer\s*[:\-]?\s*([^\n]+)"])
-        tan = self._text_value(pages, [r"TAN of the Deductor\s*[:\-]?\s*([A-Z]{4}\d{5}[A-Z])", r"TAN\s*[:\-]?\s*([A-Z]{4}\d{5}[A-Z])"])
+        employer = self._text_value(pages, [
+            r"Name and address of the Employer\s*[:\-]?\s*([^\n]+)",
+            r"Name of the Employer\s*[:\-]?\s*([^\n]+)",
+            r"Name and address of Deductor\s*[:\-]?\s*([^\n]+)",
+            r"Name of Deductor\s*[:\-]?\s*([^\n]+)",
+        ])
+        tan = self._text_value(pages, [
+            r"TAN of the Deductor\s*[:\-]?\s*([A-Z]{4}\d{5}[A-Z])",
+            r"TAN of Deductor\s*[:\-]?\s*([A-Z]{4}\d{5}[A-Z])",
+            r"TAN\s*[:\-]?\s*([A-Z]{4}\d{5}[A-Z])",
+        ])
         entity = tan or self._slug(employer or "EMPLOYER_1")
         claims: list[ExtractedClaim] = []
         for claim in [
             self._text_claim(pages, employer, "SALARY.EMPLOYER.NAME", entity, "0.96"),
             self._text_claim(pages, tan, "SALARY.EMPLOYER.TAN", entity, "0.98"),
-            find_amount_claim(pages, [r"Gross Salary[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Total amount of salary received[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.GROSS", "0.94", entity),
-            find_amount_claim(pages, [r"Total amount of exemption claimed under section 10[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Less\s*:\s*Allowances[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.SECTION10_EXEMPTIONS", "0.92", entity),
-            find_amount_claim(pages, [r"Tax on employment\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)", r"Professional tax\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.PROFESSIONAL_TAX", "0.95", entity),
-            find_amount_claim(pages, [r"Total tax deducted\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)", r"TDS on salary\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)"], "TAX_PAYMENT.TDS.SALARY", "0.96", entity),
+            find_amount_claim(pages, [
+                r"Gross Salary[^\d]*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Total amount of salary received[^\d]*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Salary as per provisions contained in section 17\(1\)[^\d]*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Gross\s+Total[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "SALARY.GROSS", "0.94", entity),
+            find_amount_claim(pages, [
+                r"Standard deduction\s*(?:under\s*section\s*16\s*\(ia\)\s*)?[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Standard deduction[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "SALARY.STANDARD_DEDUCTION", "0.95", entity),
+            find_amount_claim(pages, [
+                r"Total amount of exemption claimed under section 10[^\d]*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Less\s*:\s*Allowances[^\d]*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Exemption\s+under\s+section\s+10[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "SALARY.SECTION10_EXEMPTIONS", "0.92", entity),
+            find_amount_claim(pages, [
+                r"Tax on employment\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Professional tax\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "SALARY.PROFESSIONAL_TAX", "0.95", entity),
+            find_amount_claim(pages, [
+                r"Total tax deducted\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"TDS on salary\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Tax deducted at source[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "TAX_PAYMENT.TDS.SALARY", "0.96", entity),
+            find_amount_claim(pages, [
+                r"(?:Section\s*)?80C[^\d]*(\d[\d,]*(?:\.\d{1,2})?)",
+                r"Life Insurance Premiums[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "DEDUCTIONS.80C", "0.90", entity),
+            find_amount_claim(pages, [
+                r"(?:Section\s*)?80D[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"
+            ], "DEDUCTIONS.80D", "0.90", entity),
         ]:
             if claim:
                 claims.append(claim)
