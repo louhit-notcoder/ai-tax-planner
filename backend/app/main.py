@@ -58,10 +58,12 @@ app.add_middleware(
 async def security_and_rate_limit(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     request.state.request_id = request_id
-    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+    # Only apply origin check for non-API routes (allow all API origins for file uploads)
+    # The CORSMiddleware handles API CORS properly
+    if not request.url.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")
         if origin and origin not in settings.cors_origins:
-            return JSONResponse(status_code=403, content={"detail": "Origin is not allowed", "request_id": request_id}, headers={"X-Request-ID": request_id})
+            return JSONResponse(status_code=403, content={"detail": f"Origin '{origin}' is not allowed. Allowed: {list(settings.cors_origins)}", "request_id": request_id}, headers={"X-Request-ID": request_id})
     client = request.client.host if request.client else "unknown"
     limit = 300 if request.url.path.startswith("/api/health") else 120
     if not await rate_limiter.allowed(client, limit=limit):
