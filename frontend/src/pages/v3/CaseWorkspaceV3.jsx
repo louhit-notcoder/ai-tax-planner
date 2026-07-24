@@ -299,7 +299,9 @@ export default function CaseWorkspaceV3() {
             addSystemMessage(`Processed ${successfulFiles.length} file(s): ${successfulFiles.map((f) => f.name).join(', ')}`);
           }
           if (failedFiles.length > 0) {
-            addSystemMessage(`Failed to process: ${failedFiles.map((f) => f.name).join(', ')}`);
+            for (const f of failedFiles) {
+              addSystemMessage(`❌ ${f.name}: ${f.error}`);
+            }
           }
 
           // Refresh data after uploads
