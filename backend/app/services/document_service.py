@@ -110,7 +110,16 @@ def extract_document(db: Session, *, actor: Actor, document_id: str) -> tuple[Do
     if not adapter:
         document.state = "UNSUPPORTED_FORMAT"
         document.classification_confidence = score
-        raise HTTPException(status_code=422, detail="No production adapter recognised this document")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "No production adapter recognised this document. Please ensure the file is a valid PDF, JSON, CSV, or XLSX file.",
+                "filename": document.original_filename,
+                "mime_type": document.mime_type,
+                "score": str(score),
+                "hint": "If this is a Form 16 PDF with custom fonts, Vision API may be required."
+            }
+        )
     run = ExtractionRun(
         tenant_id=actor.tenant_id,
         case_id=document.case_id,
@@ -180,7 +189,17 @@ def extract_document(db: Session, *, actor: Actor, document_id: str) -> tuple[Do
         run.completed_at = datetime.now(timezone.utc)
         document.state = "PARSER_FAILED"
         db.flush()
-        raise
+        # Return a clear error with context for debugging
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"Document extraction failed: {str(exc)}",
+                "adapter": adapter.code,
+                "document_id": document_id,
+                "hint": "Check Render logs for full traceback. Common issues: openpyxl not installed, Vision API not configured, or malformed PDF."
+            }
+        ) from exc
 
 
 def unlock_document(db: Session, *, actor: Actor, document_id: str, password: str) -> Document:

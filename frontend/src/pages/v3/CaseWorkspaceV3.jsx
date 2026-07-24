@@ -197,11 +197,19 @@ export default function CaseWorkspaceV3() {
 
       } catch (err) {
         console.error('[Upload] Error:', err);
+        const errorDetail = err?.response?.data?.detail;
+        let errorMsg = errText(err);
+
+        // Try to extract more helpful message from backend
+        if (typeof errorDetail === 'object' && errorDetail) {
+          errorMsg = errorDetail.message || errorDetail.hint || errorDetail.detail || JSON.stringify(errorDetail);
+        }
+
         results.push({
           id: null,
           name: uploadFile.name,
           success: false,
-          error: errText(err),
+          error: errorMsg,
         });
       }
     }
