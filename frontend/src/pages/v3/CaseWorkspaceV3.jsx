@@ -219,7 +219,7 @@ export default function CaseWorkspaceV3() {
         fileName: passwordModal.filename,
       });
 
-      await api.post(`/documents/${passwordModal.docId}/process}`, {
+      await api.post(`/documents/${passwordModal.docId}/process`, {
         password: passwordModal.password,
       });
 

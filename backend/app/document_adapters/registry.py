@@ -6,6 +6,7 @@ from .ais import AISJSONAdapter
 from .banks import BankStatementAdapter
 from .base import AdapterResult, DocumentAdapter
 from .brokers import BrokerCapitalGainsAdapter
+from .excel_brokers import ExcelCapitalGainsAdapter, ExcelBankStatementAdapter
 from .form16 import Form16Adapter
 from .llm_adapters import BankStatementPDFAdapter, BrokerCapitalGainsPDFAdapter, Form16LLMAdapter, USBrokerageForeignAssetPDFAdapter
 from .previous_itr import PreviousITRJSONAdapter
@@ -17,7 +18,11 @@ class AdapterRegistry:
         # LLM-assisted adapters score 0 when the vision model is unconfigured, so
         # the deterministic regex/JSON adapters below remain the fallback.
         self.adapters = adapters or [
+            # LLM-assisted adapters (require OpenRouter vision model)
             Form16LLMAdapter(), BrokerCapitalGainsPDFAdapter(), BankStatementPDFAdapter(), USBrokerageForeignAssetPDFAdapter(),
+            # Excel adapters (NEW - handle .xlsx files from brokers)
+            ExcelCapitalGainsAdapter(), ExcelBankStatementAdapter(),
+            # Deterministic adapters (regex-based, always work)
             Form16Adapter(), AISJSONAdapter(), TISAdapter(), Form26ASAdapter(),
             BankStatementAdapter(), BrokerCapitalGainsAdapter(), PreviousITRJSONAdapter(),
         ]
@@ -34,3 +39,7 @@ class AdapterRegistry:
         result = adapter.extract(filename, mime_type, content)
         result.metadata["classification_score"] = str(score)
         return result
+
+
+# Singleton instance used by document_service
+registry = AdapterRegistry()
