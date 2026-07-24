@@ -166,9 +166,7 @@ export default function CaseWorkspaceV3() {
         formData.append('file', uploadFile.file);
         formData.append('case_id', id);
 
-        const { data: uploadResult } = await api.post('/documents/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const { data: uploadResult } = await api.post('/documents/upload', formData);
 
         // Check if password is required
         if (uploadResult.status === 'password_required') {
