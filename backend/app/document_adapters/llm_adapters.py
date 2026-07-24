@@ -167,6 +167,15 @@ class Form16LLMAdapter(LLMDocumentAdapter):
             if hits:
                 # Beat the regex Form16Adapter (~0.92) when we clearly recognise it.
                 return min(Decimal("0.90") + Decimal("0.03") * hits, Decimal("0.99"))
+            # If text extraction returned very little (common with government PDFs using custom fonts),
+            # still accept this as a candidate for vision-based extraction.
+            # Government PDFs from tax portals often use encoded fonts that text extractors can't read.
+            if len(text.strip()) < 100:
+                # Check filename for hints
+                if re.search(r"form.?16|part.?a|part.?b|tan|salary|income.?tax", name, re.IGNORECASE):
+                    return Decimal("0.75")
+                # If it's a PDF with minimal text, assume it might need vision
+                return Decimal("0.60")
         # Scanned image or filename hint — regex can't read these at all, so the
         # vision path is the only one that can; claim it on a filename signal.
         if mime.startswith("image/") and re.search(r"form.?16", name):

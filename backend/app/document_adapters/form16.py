@@ -35,23 +35,21 @@ class Form16Adapter(DocumentAdapter):
             self._text_claim(pages, employer, "SALARY.EMPLOYER.NAME", entity, "0.96"),
             self._text_claim(pages, tan, "SALARY.EMPLOYER.TAN", entity, "0.98"),
             find_amount_claim(pages, [r"Gross Salary[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Total amount of salary received[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.GROSS", "0.94", entity),
-            find_amount_claim(pages, [r"Total amount of exemption claimed under section 10[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Less\s*:\s*Allowances[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.SECTION10_EXEMPTIONS", "0.90", entity),
-            find_amount_claim(pages, [r"Tax on employment[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Professional tax[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.PROFESSIONAL_TAX", "0.88", entity),
-            find_amount_claim(pages, [r"Total amount of tax deducted[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Tax deducted at source[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "TAX_PAYMENT.TDS.SALARY", "0.92", entity),
+            find_amount_claim(pages, [r"Total amount of exemption claimed under section 10[^\d]*(\d[\d,]*(?:\.\d{1,2})?)", r"Less\s*:\s*Allowances[^\d]*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.SECTION10_EXEMPTIONS", "0.92", entity),
+            find_amount_claim(pages, [r"Tax on employment\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)", r"Professional tax\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)"], "SALARY.PROFESSIONAL_TAX", "0.95", entity),
+            find_amount_claim(pages, [r"Total tax deducted\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)", r"TDS on salary\s*[:\-]?\s*(\d[\d,]*(?:\.\d{1,2})?)"], "TAX_PAYMENT.TDS.SALARY", "0.96", entity),
         ]:
             if claim:
                 claims.append(claim)
-        gross = next((Decimal(c.value["amount"]) for c in claims if c.field_code == "SALARY.GROSS"), None)
-        exemptions = next((Decimal(c.value["amount"]) for c in claims if c.field_code == "SALARY.SECTION10_EXEMPTIONS"), Decimal("0"))
         warnings = []
-        if gross is None:
-            warnings.append("Gross salary was not identified; manual review is required.")
-        elif exemptions > gross:
-            warnings.append("Extracted section 10 exemptions exceed gross salary.")
-        return AdapterResult(self.code, self.version, self.document_type, claims, warnings, {"employer_entity_key": entity, "page_count": len(pages), "text_sha_hint": hash(full_text[:1000])})
+        if not any(c.field_code == "SALARY.GROSS" for c in claims):
+            warnings.append("Gross salary was not identified; manual review required.")
+        return AdapterResult(self.code, self.version, self.document_type, claims, warnings)
 
     @staticmethod
-    def _slug(value: str) -> str:
+    def _slug(value):
+        if not value:
+            return "ROOT"
         return re.sub(r"[^A-Z0-9]+", "_", value.upper()).strip("_")[:80]
 
     @staticmethod
