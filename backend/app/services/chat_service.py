@@ -17,7 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db_models import ChatMessage, Client
+from ..db_models import CandidateFact, ChatMessage, Client, Document
 from ..security import Actor, assert_case_access
 from .assistant_service import OpenRouterModelClient, gateway
 
@@ -66,6 +66,9 @@ def _tool_schemas() -> list[dict[str, Any]]:
     return [
         fn("search_tax_law", "Search approved official Indian tax sources for a provision, limit, rate or rule. Use this instead of answering rule questions from memory.",
            {"query": {"type": "string", "description": "The tax question or provision to look up."}}, ["query"]),
+        fn("list_documents", "List all documents uploaded for this client case, their document type, filename, and state.", {}),
+        fn("read_document_evidence", "Read extracted line items, evidence claims, and candidate facts for a specific document by filename or document_id.",
+           {"filename": {"type": "string", "description": "Optional filename to inspect"}, "document_id": {"type": "string", "description": "Optional document_id to inspect"}}),
         fn("read_case_facts", "Read the current CA-reviewed canonical facts extracted for this client (income, deductions, etc.). Use before summarising the client's situation.", {}),
         fn("list_missing_information", "List open missing-information items and blockers for this case.", {}),
         fn("explain_computation", "Explain a single line of the latest deterministic tax computation. Provide the calculation line code.",
@@ -138,8 +141,25 @@ def run_chat(db: Session, actor: Actor, case_id: str, user_message: str) -> dict
 
     client_row = db.scalar(select(Client).where(Client.id == case.client_id, Client.tenant_id == actor.tenant_id))
     client_name = getattr(client_row, "display_name", None) or "the client"
+    docs = list(db.scalars(select(Document).where(Document.tenant_id == actor.tenant_id, Document.case_id == case.id).order_by(Document.created_at.desc())))
+    doc_lines = [f"  - {d.original_filename} (Type: {d.document_type}, State: {d.state})" for d in docs]
+    doc_summary_str = "\n".join(doc_lines) if doc_lines else "  None"
+    candidates_count = len(list(db.scalars(select(CandidateFact.id).where(CandidateFact.tenant_id == actor.tenant_id, CandidateFact.case_id == case.id))))
+
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.append({"role": "system", "content": f"Active case context: client={client_name!r}, tax_period={case.tax_period}, assessment_year={case.assessment_year}, selected_regime={case.selected_regime}, status={case.status}."})
+    messages.append({
+        "role": "system",
+        "content": (
+            f"Active case context:\n"
+            f"- Client: {client_name!r}\n"
+            f"- Tax Period: {case.tax_period} (AY {case.assessment_year})\n"
+            f"- Selected Regime: {case.selected_regime}\n"
+            f"- Status: {case.status}\n"
+            f"- Uploaded Documents:\n{doc_summary_str}\n"
+            f"- Extracted Candidate Facts Count: {candidates_count}\n\n"
+            f"INSTRUCTION: When asked about uploaded documents or analyzing a document, inspect the Uploaded Documents list above. Call `read_document_evidence` or `summarise_case` to read the document's evidence claims and candidate facts, and provide a clear, helpful breakdown."
+        )
+    })
     for row in history:
         if row.role in {"user", "assistant"} and row.content:
             messages.append({"role": row.role, "content": row.content})

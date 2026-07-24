@@ -97,10 +97,24 @@ async def upload_flat(case_id: str = Form(...), file: UploadFile = File(...), ac
     extract yet — the client calls /process next, so a locked PDF can be reported
     back for a password prompt first."""
     data = await file.read()
-    document = upload_document(db, actor=actor, case_id=case_id, filename=file.filename or "upload.bin", content_type=file.content_type or "application/octet-stream", data=data)
-    db.commit()
-    requires = document.state == "PASSWORD_REQUIRED"
-    return {"document_id": document.id, "status": "password_required" if requires else "uploaded", "requires_password": requires, "filename": document.original_filename}
+    try:
+        document = upload_document(db, actor=actor, case_id=case_id, filename=file.filename or "upload.bin", content_type=file.content_type or "application/octet-stream", data=data)
+        db.commit()
+        requires = document.state == "PASSWORD_REQUIRED"
+        return {"document_id": document.id, "status": "password_required" if requires else "uploaded", "requires_password": requires, "filename": document.original_filename}
+    except HTTPException as exc:
+        if exc.status_code == 409 and isinstance(exc.detail, dict) and "document_id" in exc.detail:
+            doc_id = exc.detail["document_id"]
+            existing = db.scalar(select(Document).where(Document.id == doc_id, Document.tenant_id == actor.tenant_id))
+            requires = existing.state == "PASSWORD_REQUIRED" if existing else False
+            return {
+                "document_id": doc_id,
+                "status": "password_required" if requires else "uploaded",
+                "requires_password": requires,
+                "filename": file.filename or "upload.bin",
+                "is_duplicate": True,
+            }
+        raise
 
 
 @router.post("/documents/{document_id}/process")

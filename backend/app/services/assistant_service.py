@@ -15,6 +15,7 @@ from ..db_models import (
     CandidateFact,
     ClientQuestionDraft,
     ComputationRun,
+    Document,
     DocumentRequestDraft,
     EvidenceClaim,
     MissingItem,
@@ -27,6 +28,8 @@ from .facts_service import propose_candidate
 TOOL_PERMISSION = {
     "search_tax_law": "assistant:*",
     "read_case_facts": "assistant:*",
+    "list_documents": "assistant:*",
+    "read_document_evidence": "assistant:*",
     "list_missing_information": "assistant:*",
     "propose_fact": "fact:propose",
     "explain_computation": "computation:read",
@@ -87,6 +90,65 @@ class AssistantToolGateway:
     def tool_read_case_facts(self, db, actor, case, args, _key):
         rows = list(db.scalars(select(CanonicalFact).where(CanonicalFact.tenant_id == actor.tenant_id, CanonicalFact.case_id == case.id, CanonicalFact.is_current.is_(True))))
         return {"type": "case_facts", "facts": [{"id": row.id, "field_code": row.field_code, "entity_key": row.entity_key, "value": row.value_json, "evidence_claim_ids": row.evidence_claim_ids, "version": row.version} for row in rows]}
+
+    def tool_list_documents(self, db, actor, case, args, _key):
+        rows = list(db.scalars(select(Document).where(Document.tenant_id == actor.tenant_id, Document.case_id == case.id).order_by(Document.created_at.desc())))
+        return {
+            "type": "document_list",
+            "documents": [
+                {
+                    "id": r.id,
+                    "filename": r.original_filename,
+                    "document_type": r.document_type,
+                    "state": r.state,
+                    "requires_password": r.state == "PASSWORD_REQUIRED",
+                }
+                for r in rows
+            ],
+        }
+
+    def tool_read_document_evidence(self, db, actor, case, args, _key):
+        doc_id = args.get("document_id")
+        filename = args.get("filename")
+        doc = None
+        if doc_id:
+            doc = db.scalar(select(Document).where(Document.id == doc_id, Document.tenant_id == actor.tenant_id))
+        elif filename:
+            doc = db.scalar(select(Document).where(Document.original_filename.ilike(f"%{filename}%"), Document.tenant_id == actor.tenant_id, Document.case_id == case.id))
+        if not doc:
+            docs = list(db.scalars(select(Document).where(Document.tenant_id == actor.tenant_id, Document.case_id == case.id)))
+            if docs:
+                doc = docs[0]
+        if not doc:
+            return {"type": "document_evidence", "found": False, "message": "No document found for this case."}
+
+        claims = list(db.scalars(select(EvidenceClaim).where(EvidenceClaim.document_id == doc.id).order_by(EvidenceClaim.page_index)))
+        candidates = list(db.scalars(select(CandidateFact).where(CandidateFact.tenant_id == actor.tenant_id, CandidateFact.case_id == case.id)))
+
+        return {
+            "type": "document_evidence",
+            "found": True,
+            "document": {"id": doc.id, "filename": doc.original_filename, "type": doc.document_type, "state": doc.state},
+            "evidence_claims": [
+                {
+                    "field_code": c.field_code,
+                    "value_type": c.value_type,
+                    "value": c.value_json,
+                    "original_text": c.original_text,
+                    "page_index": c.page_index,
+                }
+                for c in claims
+            ],
+            "extracted_facts": [
+                {
+                    "id": f.id,
+                    "field_code": f.field_code,
+                    "value": f.value_json,
+                    "status": f.status,
+                }
+                for f in candidates
+            ],
+        }
 
     def tool_list_missing_information(self, db, actor, case, args, _key):
         rows = list(db.scalars(select(MissingItem).where(MissingItem.tenant_id == actor.tenant_id, MissingItem.case_id == case.id, MissingItem.status == "OPEN")))
