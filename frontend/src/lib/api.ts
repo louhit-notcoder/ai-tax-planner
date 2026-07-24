@@ -13,6 +13,10 @@ console.log("[API] Full API base URL:", API);
 const api = axios.create({ baseURL: API, timeout: 60_000, withCredentials: true });
 
 api.interceptors.request.use((config) => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("gp_access_token") : null;
+  if (token && !config.headers["Authorization"]) {
+    config.headers["Authorization"] = `Bearer ${token}`;
+  }
   console.log("[API] Request:", config.method?.toUpperCase(), config.url);
   return config;
 });
@@ -33,7 +37,20 @@ api.interceptors.response.use(
 
 let refreshPromise: Promise<void> | null = null;
 async function refreshSession(): Promise<void> {
-  await axios.post(`${API}/auth/refresh`, {}, { withCredentials: true, timeout: 30_000 });
+  const refreshToken = typeof window !== "undefined" ? localStorage.getItem("gp_refresh_token") : null;
+  const headers = refreshToken ? { Authorization: `Bearer ${refreshToken}` } : {};
+  const { data } = await axios.post<{ access_token?: string; refresh_token?: string }>(
+    `${API}/auth/refresh`,
+    {},
+    { headers, withCredentials: true, timeout: 30_000 }
+  );
+  if (data?.access_token) {
+    localStorage.setItem("gp_access_token", data.access_token);
+    api.defaults.headers.common["Authorization"] = `Bearer ${data.access_token}`;
+  }
+  if (data?.refresh_token) {
+    localStorage.setItem("gp_refresh_token", data.refresh_token);
+  }
 }
 
 api.interceptors.response.use(undefined, async (error: AxiosError) => {

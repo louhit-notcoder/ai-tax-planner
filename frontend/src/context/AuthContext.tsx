@@ -41,8 +41,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const establishSession = useCallback((data: SessionResponse) => {
+  const establishSession = useCallback((data: SessionResponse & { access_token?: string; refresh_token?: string }) => {
     console.log("[Auth] Establishing session:", data);
+    if (data.access_token) {
+      localStorage.setItem("gp_access_token", data.access_token);
+      api.defaults.headers.common["Authorization"] = `Bearer ${data.access_token}`;
+    }
+    if (data.refresh_token) {
+      localStorage.setItem("gp_refresh_token", data.refresh_token);
+    }
     if (data.user) {
       setUser(data.user);
       setLoading(false);
@@ -56,6 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.log("[Auth] Logout API failed (ignoring):", e);
     }
+    localStorage.removeItem("gp_access_token");
+    localStorage.removeItem("gp_refresh_token");
+    delete api.defaults.headers.common["Authorization"];
     setUser(null);
   }, []);
 

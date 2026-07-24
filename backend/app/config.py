@@ -131,7 +131,7 @@ def get_settings() -> Settings:
         jwt_issuer=os.getenv("JWT_ISSUER", "green-papaya"),
         access_token_minutes=int(os.getenv("ACCESS_TOKEN_MINUTES", "30")),
         refresh_token_days=int(os.getenv("REFRESH_TOKEN_DAYS", "14")),
-        expose_auth_tokens_in_response=os.getenv("EXPOSE_AUTH_TOKENS_IN_RESPONSE", "true" if environment != "production" else "false").lower() == "true",
+        expose_auth_tokens_in_response=os.getenv("EXPOSE_AUTH_TOKENS_IN_RESPONSE", "true").lower() == "true",
         app_base_url=os.getenv("APP_BASE_URL", "http://localhost:3000").rstrip("/"),
         cors_origins=_csv(os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
         cookie_samesite=cookie_samesite,
