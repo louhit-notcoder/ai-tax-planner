@@ -99,7 +99,7 @@ class Settings:
 
 
 def _csv(value: str) -> tuple[str, ...]:
-    return tuple(item.strip() for item in value.split(",") if item.strip())
+    return tuple(item.strip().rstrip("/") for item in value.split(",") if item.strip())
 
 
 @lru_cache(maxsize=1)
