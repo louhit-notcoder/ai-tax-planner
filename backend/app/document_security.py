@@ -138,8 +138,6 @@ def inspect_document(filename: str, content_type: str, data: bytes) -> Inspectio
             document.close()
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Malformed or unreadable PDF") from exc
-        if password_protected:
-            raise HTTPException(status_code=422, detail="Password-protected PDFs must be unlocked before upload")
     if extension == "xlsx":
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
