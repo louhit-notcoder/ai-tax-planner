@@ -166,7 +166,7 @@ export default function CaseWorkspaceV3() {
         formData.append('file', uploadFile.file);
         formData.append('case_id', id);
 
-        const { data: uploadResult } = await api.post('/documents/upload', formData);
+        const { data: uploadResult } = await api.post('/documents/upload', formData, { timeout: 120_000 });
 
         // Check if password is required
         if (uploadResult.status === 'password_required') {
@@ -185,7 +185,7 @@ export default function CaseWorkspaceV3() {
           fileName: uploadFile.name,
         });
 
-        await api.post(`/documents/${uploadResult.document_id}/process`);
+        await api.post(`/documents/${uploadResult.document_id}/process`, {}, { timeout: 120_000 });
 
         results.push({
           id: uploadResult.document_id,
@@ -195,12 +195,18 @@ export default function CaseWorkspaceV3() {
 
       } catch (err) {
         console.error('[Upload] Error:', err);
-        const errorDetail = err?.response?.data?.detail;
         let errorMsg = errText(err);
+        const status = err?.response?.status;
+        const errorDetail = err?.response?.data?.detail;
 
-        // Try to extract more helpful message from backend
-        if (typeof errorDetail === 'object' && errorDetail) {
+        if (status === 401) {
+          errorMsg = 'Session expired. Please log out and sign back in.';
+        } else if (typeof errorDetail === 'string') {
+          errorMsg = errorDetail;
+        } else if (typeof errorDetail === 'object' && errorDetail) {
           errorMsg = errorDetail.message || errorDetail.hint || errorDetail.detail || JSON.stringify(errorDetail);
+        } else if (err?.message === 'Network Error' || !err?.response) {
+          errorMsg = 'Backend server waking up or connection timeout. Please wait 10 seconds and try uploading again.';
         }
 
         results.push({
