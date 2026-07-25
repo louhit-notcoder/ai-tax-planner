@@ -1,8 +1,8 @@
 {
-  "buildCommand": "yarn install && yarn build",
+  "buildCommand": "npm install && npm run build",
   "outputDirectory": "dist",
-  "installCommand": "yarn install --network-timeout 100000",
-  "framework": null,
+  "installCommand": "npm install",
+  "framework": "vite",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
