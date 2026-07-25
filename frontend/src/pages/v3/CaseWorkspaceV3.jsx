@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Send, FileText, Bot, User, X, CheckCircle2, AlertCircle, Loader2, Download, RefreshCw, Paperclip, Calculator, File, Lock, Sparkles, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Send, FileText, Bot, User, X, CheckCircle2, AlertCircle, Loader2, Download, RefreshCw, Paperclip, Calculator, File, Lock, Sparkles, Eye, EyeOff } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -61,7 +61,7 @@ export default function CaseWorkspaceV3() {
   const [rightPanelTab, setRightPanelTab] = useState('computation');
   const [isDragging, setIsDragging] = useState(false);
   const [processingStatus, setProcessingStatus] = useState(null);
-  const [passwordModal, setPasswordModal] = useState({ open: false, docId: null, filename: '', password: '' });
+  const [passwordModal, setPasswordModal] = useState({ open: false, docId: null, filename: '', password: '', showPassword: false, error: '', loading: false });
 
   // Load all case data
   const load = useCallback(async () => {
@@ -175,6 +175,9 @@ export default function CaseWorkspaceV3() {
             docId: uploadResult.document_id,
             filename: uploadFile.name,
             password: '',
+            showPassword: false,
+            error: '',
+            loading: false,
           });
           return { success: false, passwordRequired: true, docId: uploadResult.document_id };
         }
