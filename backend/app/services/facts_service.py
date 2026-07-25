@@ -193,7 +193,28 @@ def _sync_reconciliation_for_fact(db: Session, *, actor: Actor, candidate: Candi
 
 def list_current_facts(db: Session, actor: Actor, case_id: str) -> list[CanonicalFact]:
     assert_case_access(db, actor, case_id, "fact:read")
-    return list(db.scalars(select(CanonicalFact).where(CanonicalFact.tenant_id == actor.tenant_id, CanonicalFact.case_id == case_id, CanonicalFact.is_current.is_(True)).order_by(CanonicalFact.field_code, CanonicalFact.entity_key)))
+    canonical = list(db.scalars(select(CanonicalFact).where(CanonicalFact.tenant_id == actor.tenant_id, CanonicalFact.case_id == case_id, CanonicalFact.is_current.is_(True)).order_by(CanonicalFact.field_code, CanonicalFact.entity_key)))
+    if not canonical:
+        candidates = list(db.scalars(select(CandidateFact).where(CandidateFact.tenant_id == actor.tenant_id, CandidateFact.case_id == case_id, CandidateFact.status.in_(["PENDING_REVIEW", "ACCEPTED"])).order_by(CandidateFact.field_code)))
+        synths: list[CanonicalFact] = []
+        for cand in candidates:
+            synths.append(CanonicalFact(
+                id=cand.id,
+                tenant_id=cand.tenant_id,
+                case_id=cand.case_id,
+                field_code=cand.field_code,
+                entity_key=cand.value_json.get("entity_key") or "ROOT",
+                value_type=cand.value_type,
+                value_json=cand.value_json,
+                tax_period=cand.tax_period,
+                evidence_claim_ids=cand.evidence_claim_ids,
+                source_candidate_id=cand.id,
+                version=1,
+                is_current=True,
+                created_by=actor.user_id,
+            ))
+        return synths
+    return canonical
 
 
 def _amount(value: dict, default: str = "0") -> Decimal:

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Send, FileText, Bot, User, X, CheckCircle2, AlertCircle, Loader2, Download, RefreshCw, Paperclip, Calculator, File, Lock, Sparkles, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Send, FileText, Bot, User, X, CheckCircle2, AlertCircle, Loader2, Download, RefreshCw, Paperclip, Calculator, File, Lock, Sparkles, ExternalLink, Eye, EyeOff } from 'lucide-react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -224,27 +224,42 @@ export default function CaseWorkspaceV3() {
   const handlePasswordSubmit = async () => {
     if (!passwordModal.docId || !passwordModal.password.trim()) return;
 
+    setPasswordModal((prev) => ({ ...prev, loading: true, error: '' }));
+
     try {
       setProcessingStatus({
         type: 'processing',
-        message: `Processing ${passwordModal.filename}...`,
+        message: `Decrypting & processing ${passwordModal.filename}...`,
         fileName: passwordModal.filename,
       });
 
-      await api.post(`/documents/${passwordModal.docId}/process`, {
+      const { data } = await api.post(`/documents/${passwordModal.docId}/process`, {
         password: passwordModal.password,
       });
 
-      // Refresh data
+      if (data?.status === 'password_required' || data?.requires_password) {
+        setPasswordModal((prev) => ({
+          ...prev,
+          loading: false,
+          error: 'Incorrect password for this document. Please verify and try again.',
+        }));
+        setProcessingStatus(null);
+        return;
+      }
+
+      // Refresh data & compute
       await load();
 
-      setPasswordModal({ open: false, docId: null, filename: '', password: '' });
+      setPasswordModal({ open: false, docId: null, filename: '', password: '', showPassword: false, error: '', loading: false });
       setProcessingStatus(null);
 
-      addSystemMessage(`${passwordModal.filename} processed successfully.`);
+      addSystemMessage(`${passwordModal.filename} unlocked and processed successfully.`);
     } catch (err) {
-      addSystemMessage(`Failed to process ${passwordModal.filename}: ${errText(err)}`);
-      setPasswordModal({ open: false, docId: null, filename: '', password: '' });
+      setPasswordModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: errText(err, 'Failed to unlock document'),
+      }));
       setProcessingStatus(null);
     }
   };
@@ -572,7 +587,11 @@ export default function CaseWorkspaceV3() {
 
             {/* ========== DOCUMENTS TAB ========== */}
             <TabsContent value="documents" className="flex-1 overflow-y-auto p-4">
-              <DocumentsTab documents={documents} caseId={id} />
+              <DocumentsTab
+                documents={documents}
+                caseId={id}
+                onUnlockDoc={(doc) => setPasswordModal({ open: true, docId: doc.id, filename: doc.filename || doc.original_filename, password: '', showPassword: false, error: '', loading: false })}
+              />
             </TabsContent>
 
             {/* ========== FACTS TAB ========== */}
@@ -596,32 +615,49 @@ export default function CaseWorkspaceV3() {
                 <p className="text-sm text-slate-500 truncate max-w-48">{passwordModal.filename}</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600 mb-4">
-              This PDF is password-protected. Enter the password to decrypt and process it.
+            <p className="text-sm text-slate-600 mb-3">
+              This PDF is password-protected (e.g. PAN card number or DOB). Enter the password to unlock and process it.
             </p>
-            <input
-              type="password"
-              placeholder="Enter password"
-              value={passwordModal.password}
-              onChange={(e) => setPasswordModal({ ...passwordModal, password: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 mb-4"
-              autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-            />
+            {passwordModal.error && (
+              <div className="p-2.5 mb-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span>{passwordModal.error}</span>
+              </div>
+            )}
+            <div className="relative mb-4">
+              <input
+                type={passwordModal.showPassword ? "text" : "password"}
+                placeholder="Enter password (e.g. ABCDE1234F)"
+                value={passwordModal.password}
+                onChange={(e) => setPasswordModal({ ...passwordModal, password: e.target.value, error: '' })}
+                className="w-full pl-4 pr-10 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+              />
+              <button
+                type="button"
+                onClick={() => setPasswordModal((prev) => ({ ...prev, showPassword: !prev.showPassword }))}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                title={passwordModal.showPassword ? "Hide password" : "Show password"}
+              >
+                {passwordModal.showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             <div className="flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => setPasswordModal({ open: false, docId: null, filename: '', password: '' })}
+                onClick={() => setPasswordModal({ open: false, docId: null, filename: '', password: '', showPassword: false, error: '', loading: false })}
                 className="flex-1"
+                disabled={passwordModal.loading}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handlePasswordSubmit}
-                disabled={!passwordModal.password.trim()}
-                className="flex-1 bg-orange-500 hover:bg-orange-600"
+                disabled={!passwordModal.password.trim() || passwordModal.loading}
+                className="flex-1 bg-orange-500 hover:bg-orange-600 flex items-center justify-center gap-2"
               >
-                Process
+                {passwordModal.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Process'}
               </Button>
             </div>
           </div>
@@ -909,11 +945,16 @@ function ComputationLine({ label, value, bold, green, red }) {
 
 // ========== DOCUMENTS TAB ==========
 
-function DocumentsTab({ documents, caseId }) {
-  const [selectedDoc, setSelectedDoc] = useState(null);
+function DocumentsTab({ documents, caseId, onUnlockDoc }) {
+  const [openingId, setOpeningId] = useState(null);
 
-  const openDocument = async (doc) => {
-    setSelectedDoc(doc);
+  const openDocument = async (e, doc) => {
+    e?.stopPropagation();
+    if (doc.state === 'PASSWORD_REQUIRED' || doc.is_password_protected) {
+      if (onUnlockDoc) onUnlockDoc(doc);
+      return;
+    }
+    setOpeningId(doc.id);
     try {
       const { data } = await api.get(`/documents/${doc.id}/content`, {
         responseType: 'blob',
@@ -923,6 +964,8 @@ function DocumentsTab({ documents, caseId }) {
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err) {
       console.error('[Document] Error opening:', err);
+    } finally {
+      setOpeningId(null);
     }
   };
 
@@ -938,35 +981,57 @@ function DocumentsTab({ documents, caseId }) {
 
   return (
     <div className="space-y-2">
-      {documents.map((doc) => (
-        <div
-          key={doc.id}
-          onClick={() => openDocument(doc)}
-          className="flex items-center gap-3 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-colors"
-        >
-          <FileText className="h-5 w-5 text-slate-400 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{doc.filename}</p>
-            <p className="text-xs text-slate-500">
-              {doc.document_type || 'Document'} · {formatFileSize(doc.file_size)}
-            </p>
-          </div>
-          <span
-            className={`text-xs px-2 py-0.5 rounded ${
-              doc.state === 'PROCESSED'
-                ? 'bg-green-100 text-green-700'
-                : doc.state === 'PENDING'
-                ? 'bg-yellow-100 text-yellow-700'
-                : doc.state === 'FAILED'
-                ? 'bg-red-100 text-red-700'
-                : 'bg-slate-100 text-slate-600'
-            }`}
+      {documents.map((doc) => {
+        const isLocked = doc.state === 'PASSWORD_REQUIRED' || doc.is_password_protected;
+        return (
+          <div
+            key={doc.id}
+            onClick={(e) => openDocument(e, doc)}
+            className="flex items-center gap-3 p-3 rounded-xl border bg-white hover:bg-slate-50 cursor-pointer transition-colors group"
           >
-            {doc.state === 'PROCESSED' ? 'Done' : doc.state || 'Ready'}
-          </span>
-          <ExternalLink className="h-4 w-4 text-slate-400" />
-        </div>
-      ))}
+            <FileText className="h-5 w-5 text-slate-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{doc.filename || doc.original_filename}</p>
+              <p className="text-xs text-slate-500">
+                {doc.document_type || 'Document'} · {formatFileSize(doc.file_size || doc.size_bytes)}
+              </p>
+            </div>
+            {isLocked ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 font-medium flex items-center gap-1">
+                <Lock className="h-3 w-3" /> Unlock Required
+              </span>
+            ) : (
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  doc.state === 'PROCESSED' || doc.state === 'VALIDATION_REQUIRED'
+                    ? 'bg-green-100 text-green-700'
+                    : doc.state === 'PENDING'
+                    ? 'bg-yellow-100 text-yellow-700'
+                    : doc.state === 'FAILED'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {doc.state === 'PROCESSED' || doc.state === 'VALIDATION_REQUIRED' ? 'Processed' : doc.state || 'Ready'}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={(e) => openDocument(e, doc)}
+              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+              title={isLocked ? "Unlock Document" : "View Document"}
+            >
+              {openingId === doc.id ? (
+                <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
+              ) : isLocked ? (
+                <Lock className="h-4 w-4 text-orange-500" />
+              ) : (
+                <Eye className="h-4 w-4 text-slate-600" />
+              )}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
